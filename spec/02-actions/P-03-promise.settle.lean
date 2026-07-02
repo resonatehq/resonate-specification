@@ -16,10 +16,17 @@ def promiseSettle (req : PromiseSettleReq) (now : Nat) : M PromiseSettleRes := d
           delPromiseTimeout p.id
           match ← getTask p.id with
           | some t =>
-              setTask { t with state := .fulfilled, pid := none, ttl := none }
+              setTask { t with state := .fulfilled, pid := none, ttl := none, resumes := [] }
               delTaskTimeout t.id
           | none =>
               pure ()
+          -- settlement scrub: p can never be resumed again; drop its dead registrations
+          modify fun s =>
+            { s with promises := s.promises.map fun q =>
+                if q.state == .pending then
+                  { q with callbacks := q.callbacks.filter (· != p.id) }
+                else
+                  q }
           for address in listeners do
             setMessage address (.unblock p.toRecord)
           for awaiterId in callbacks do

@@ -19,8 +19,15 @@ def taskFulfill (req : TaskFulfillReq) (now : Nat) : M TaskFulfillRes := do
       let p := { p with state := req.action.state, value := req.action.value, settledAt := some now, callbacks := [], listeners := [] }
       setPromise p
       delPromiseTimeout p.id
-      setTask { t with state := .fulfilled, pid := none, ttl := none }
+      setTask { t with state := .fulfilled, pid := none, ttl := none, resumes := [] }
       delTaskTimeout t.id
+      -- settlement scrub: p can never be resumed again; drop its dead registrations
+      modify fun s =>
+        { s with promises := s.promises.map fun q =>
+            if q.state == .pending then
+              { q with callbacks := q.callbacks.filter (· != p.id) }
+            else
+              q }
       for address in listeners do
         setMessage address (.unblock p.toRecord)
       for awaiterId in callbacks do
