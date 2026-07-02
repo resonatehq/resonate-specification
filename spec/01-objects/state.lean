@@ -169,8 +169,4 @@ def setMessage (address : String) (msg : Message) : M Unit :=
     let key   := entry.key
     { s with outbox := entry :: s.outbox.filter (fun e => e.key != key) }
 
-def delMessage (id : String) : M Unit :=
-  modify fun s =>
-    { s with outbox := s.outbox.filter (fun e => e.key != id) }
-
 end ServerModel

@@ -1,6 +1,6 @@
 # Resonate Specification
 
-The Resonate protocol, specified as an executable **abstract machine** in Lean 4: a state, a set of effects — the atomic operations on the state — and a set of handlers, transitions composed from effects. 
+The Resonate protocol, specified as an executable **abstract machine** in Lean 4: a state, a set of effects (atomic operations on the state) and a set of request handlers (transitions composed from effects). 
 
 ## The Machine
 
@@ -11,14 +11,43 @@ The Resonate protocol, specified as an executable **abstract machine** in Lean 4
   </picture>
 </p>
 
-- **State** — [`state.lean`](spec/01-objects/state.lean): promises, tasks, and schedules, plus armed **timeouts** (obligations the environment fires later, as internal transitions) and the **outbox** (`execute` dispatches a task to a worker; `unblock` notifies a listener of a settled promise). Wire-level records and request/response types are in [`types.lean`](spec/01-objects/types.lean).
-- **Effects** — [`state.lean`](spec/01-objects/state.lean): the atomic operations of the machine — lookups, keyed upserts, and deletes per state component (`getPromise`/`setPromise`, `getTask`/`setTask`, `getSchedule`/`setSchedule`/`delSchedule`, `set…Timeout`/`del…Timeout`, `setMessage`/`delMessage`). Handlers touch state only through effects — the one exception is the settlement scrub, inlined at the three settlement sites (see Conventions); together they are the contract a concrete implementation must realize.
-- **Handler** — every handler is a pure function `Req → (now : Nat) → M Res` where `M = StateM ServerState`, composed exclusively from effects. Deterministic and total; there is no hidden clock — time enters only through `now`.
+### State
+
+[`state.lean`](spec/01-objects/state.lean)
+
+- **objects** — promises, tasks, and schedules
+- **timeouts** — obligations the environment fires later, as internal transitions
+- **outbox** — messages awaiting delivery: `execute` dispatches a task to a worker, `unblock` notifies a listener of a settled promise
+
+Wire-level records and request/response types are in [`types.lean`](spec/01-objects/types.lean).
+
+### Effects
+
+The atomic operations of the machine ([`state.lean`](spec/01-objects/state.lean)) — lookups, keyed upserts, and deletes per state component:
+
+| Component | Effects |
+|---|---|
+| promises | `getPromise` / `setPromise` |
+| tasks | `getTask` / `setTask` |
+| schedules | `getSchedule` / `setSchedule` / `delSchedule` |
+| timeouts | `setPromiseTimeout` / `setTaskTimeout` / `setScheduleTimeout` / `del…Timeout` |
+| outbox | `setMessage` |
+
+Handlers touch state only through effects — the one exception is the settlement scrub, inlined at the three settlement sites. Together they are the contract a concrete implementation must realize.
+
+### Handlers
+
+Every handler is a pure function
+
+```lean
+Req → (now : Nat) → M Res    -- M = StateM ServerState
+```
+
+composed from effects. Deterministic and total; there is no hidden clock — time enters only through `now`.
 
 Conventions the whole model leans on:
 
 - **Projection** — a pending promise past `timeoutAt` is *observed* as already settled (`resolved` for timers, `rejectedTimedout` otherwise) even before its timeout transition persists that fact.
-- **Scrub** — settlement leaves no dead references: the settling promise drains its callbacks and listeners, fulfills its task (clearing `resumes`), and is removed from every pending promise's callbacks. The model is lazy in time (projection), eager in state (scrub).
 
 ## Protocol Handlers
 
