@@ -3,6 +3,10 @@ import «01-objects».«state»
 open ServerModel
 
 def taskSuspend (req : TaskSuspendReq) (now : Nat) : M TaskSuspendRes := do
+  -- a suspend parks the task on its awaited promises; suspending on
+  -- nothing would park it forever (no settlement could ever resume it)
+  if req.actions.isEmpty then
+    return { status := 422 }
   match ← getTask req.id with
   | none =>
       return { status := 404 }
