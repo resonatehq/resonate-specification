@@ -194,13 +194,14 @@ SetMessage(ob, address, msg) ==
 (* once. `ts` is the tasks value with the settled promise's task already    *)
 (* fulfilled, so a self-callback is a no-op.                                *)
 
-(* Oracle-aligned (go-actor cascadeSettle, the port of the TS SDK's
-   LocalNetwork.Server):
+(* Protocol decision 2026-07-02 (with blobfun FireCallbacks and the Dafny
+   abstract's EnqueueResume):
    - version is bumped ONLY on acquire. A resume re-emits the CURRENT
      version: the execute is a wake-up hint, not a fresh fencing token.
-   - no awaiter-deadline guard: the cascade touches the awaiter only
-     through its TASK state (an expired awaiter's own settlement fulfills
-     the task).
+   - TIMEOUT ALWAYS WINS: a logically timed-out awaiter -- deadline
+     REACHED, boundary included -- is dead weight; nothing fires, the
+     timeout path owns it. Deadline-phrased, so eager and lazy
+     materializations of the same timeline decide identically.
    - the resumed task records its trigger (resumes := {awaitedId});
      buffered resumes are deduplicated.
    - the state change does not require the awaiter promise; only the
@@ -208,9 +209,13 @@ SetMessage(ob, address, msg) ==
 
 \* suspended -> pending (resumes := {awaitedId}); pending/acquired/halted ->
 \* buffer awaitedId; fulfilled or absent -> nothing
-ResumeTasks(ts, awaitedId, awaiterIds) ==
+ResumeTasks(ps, ts, awaitedId, awaiterIds, tnow) ==
   [id \in DOMAIN ts |->
-     IF id \in awaiterIds THEN
+     IF /\ id \in awaiterIds
+        \* TIMEOUT ALWAYS WINS: an expired awaiter is dead weight
+        /\ id \in DOMAIN ps
+        /\ ps[id].timeoutAt > tnow
+     THEN
        LET t0 == ts[id] IN
        IF t0.state = "suspended" THEN
          [t0 EXCEPT !.state = "pending", !.resumes = {awaitedId}]
@@ -221,17 +226,23 @@ ResumeTasks(ts, awaitedId, awaiterIds) ==
      ELSE ts[id]]
 
 \* a resumed (suspended) awaiter gets a pending-retry timeout
-ResumeTaskTimeouts(tts, ts, awaiterIds, tnow) ==
+ResumeTaskTimeouts(ps, tts, ts, awaiterIds, tnow) ==
   LET retryTimeout == config.retryTimeout
-      resumed == {id \in awaiterIds \cap DOMAIN ts : ts[id].state = "suspended"}
+      resumed == {id \in awaiterIds \cap DOMAIN ts :
+                    /\ ts[id].state = "suspended"
+                    /\ id \in DOMAIN ps
+                    /\ ps[id].timeoutAt > tnow}
       keys == {<<id, 0>> : id \in resumed}
   IN [k \in DOMAIN tts \cup keys |->
         IF k \in keys THEN tnow + retryTimeout ELSE tts[k]]
 
 \* a resumed (suspended) awaiter whose promise has a non-empty target gets
 \* an execute message re-emitting the CURRENT version
-ResumeMessages(ob, ps, ts, awaiterIds) ==
-  LET resumed == {id \in awaiterIds \cap DOMAIN ts : ts[id].state = "suspended"}
+ResumeMessages(ob, ps, ts, awaiterIds, tnow) ==
+  LET resumed == {id \in awaiterIds \cap DOMAIN ts :
+                    /\ ts[id].state = "suspended"
+                    /\ id \in DOMAIN ps
+                    /\ ps[id].timeoutAt > tnow}
       targeted == {id \in resumed :
                      /\ id \in DOMAIN ps
                      /\ TagsGet(ps[id].tags, "resonate:target") # NULL
@@ -288,13 +299,14 @@ OnPromiseTimeout(id, tnow) ==
                         ELSE outbox[k]]
     IN /\ promises' = promises1
        /\ promiseTimeouts' = DelPromiseTimeout(promiseTimeouts, p.id)
-       /\ tasks' = ResumeTasks(tasks1, p.id, callbacks)
+       /\ tasks' = ResumeTasks(promises1, tasks1, p.id, callbacks, tnow)
        /\ taskTimeouts' = ResumeTaskTimeouts(
+                            promises1,
                             IF t # NULL
                             THEN DelTaskTimeout(taskTimeouts, t.id)
                             ELSE taskTimeouts,
                             tasks1, callbacks, tnow)
-       /\ outbox' = ResumeMessages(unblocked, promises1, tasks1, callbacks)
+       /\ outbox' = ResumeMessages(unblocked, promises1, tasks1, callbacks, tnow)
 
 OnTaskRetryTimeout(id, tnow) ==
   LET retryTimeout == config.retryTimeout
@@ -477,13 +489,14 @@ PromiseSettle(req, Wrap(_)) ==
                           ELSE outbox[k]]
       IN /\ promises' = promises1
          /\ promiseTimeouts' = DelPromiseTimeout(promiseTimeouts, p.id)
-         /\ tasks' = ResumeTasks(tasks1, p.id, callbacks)
+         /\ tasks' = ResumeTasks(promises1, tasks1, p.id, callbacks, now)
          /\ taskTimeouts' = ResumeTaskTimeouts(
+                              promises1,
                               IF t # NULL
                               THEN DelTaskTimeout(taskTimeouts, t.id)
                               ELSE taskTimeouts,
                               tasks1, callbacks, now)
-         /\ outbox' = ResumeMessages(unblocked, promises1, tasks1, callbacks)
+         /\ outbox' = ResumeMessages(unblocked, promises1, tasks1, callbacks, now)
          /\ res' = Wrap([status |-> 200, promise |-> PromiseToRecord(p)])
     ELSE
       LET projected ==
@@ -864,10 +877,11 @@ TaskFulfill(req) ==
                         ELSE outbox[k]]
     IN /\ promises' = promises1
        /\ promiseTimeouts' = DelPromiseTimeout(promiseTimeouts, p.id)
-       /\ tasks' = ResumeTasks(tasks1, p.id, callbacks)
-       /\ taskTimeouts' = ResumeTaskTimeouts(DelTaskTimeout(taskTimeouts, t0.id),
+       /\ tasks' = ResumeTasks(promises1, tasks1, p.id, callbacks, now)
+       /\ taskTimeouts' = ResumeTaskTimeouts(promises1,
+                                             DelTaskTimeout(taskTimeouts, t0.id),
                                              tasks1, callbacks, now)
-       /\ outbox' = ResumeMessages(unblocked, promises1, tasks1, callbacks)
+       /\ outbox' = ResumeMessages(unblocked, promises1, tasks1, callbacks, now)
        /\ res' = [status |-> 200, promise |-> PromiseToRecord(p)]
 
 -----------------------------------------------------------------------------
@@ -1244,9 +1258,15 @@ NonAcquiredTaskNoPidOrTtl ==
     tasks[id].state # "acquired"
       => tasks[id].pid = NULL /\ tasks[id].ttl = NULL
 
+\* Deadline-aware under TIMEOUT ALWAYS WINS: settling the awaited promise
+\* of an EXPIRED suspended awaiter clears the registration without
+\* resuming it (the timeout path owns it), so only a suspended task whose
+\* own promise is still live must hold a registration.
 SuspendedTaskHasCallback ==
   \A id \in DOMAIN tasks :
-    tasks[id].state = "suspended"
+    (/\ tasks[id].state = "suspended"
+     /\ id \in DOMAIN promises
+     /\ promises[id].timeoutAt > now)
       => \E pid \in DOMAIN promises : id \in promises[pid].callbacks
 
 FulfilledTaskHasEmptyResumes ==

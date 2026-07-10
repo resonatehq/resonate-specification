@@ -162,9 +162,13 @@ SendMsg(ob, address, msg) ==
 (* like the abstract spec's 00-resume section). `ts` is the tasks value     *)
 (* with the settled promise's task already fulfilled.                       *)
 
-ResumeTasks(ts, awaitedId, awaiterIds) ==
+ResumeTasks(ps, ts, awaitedId, awaiterIds, tnow) ==
   [id \in DOMAIN ts |->
-     IF id \in awaiterIds THEN
+     IF /\ id \in awaiterIds
+        \* TIMEOUT ALWAYS WINS: an expired awaiter is dead weight
+        /\ id \in DOMAIN ps
+        /\ ps[id].timeoutAt > tnow
+     THEN
        LET t0 == ts[id] IN
        IF t0.state = "suspended" THEN
          [t0 EXCEPT !.state = "pending", !.resumes = {awaitedId}]
@@ -174,15 +178,21 @@ ResumeTasks(ts, awaitedId, awaiterIds) ==
          t0
      ELSE ts[id]]
 
-ResumeTaskTimeouts(tts, ts, awaiterIds, tnow) ==
+ResumeTaskTimeouts(ps, tts, ts, awaiterIds, tnow) ==
   LET retryTimeout == config.retryTimeout
-      resumed == {id \in awaiterIds \cap DOMAIN ts : ts[id].state = "suspended"}
+      resumed == {id \in awaiterIds \cap DOMAIN ts :
+                    /\ ts[id].state = "suspended"
+                    /\ id \in DOMAIN ps
+                    /\ ps[id].timeoutAt > tnow}
       keys == {<<id, 0>> : id \in resumed}
   IN [k \in DOMAIN tts \cup keys |->
         IF k \in keys THEN tnow + retryTimeout ELSE tts[k]]
 
-ResumeMessages(ob, ps, ts, awaiterIds) ==
-  LET resumed == {id \in awaiterIds \cap DOMAIN ts : ts[id].state = "suspended"}
+ResumeMessages(ob, ps, ts, awaiterIds, tnow) ==
+  LET resumed == {id \in awaiterIds \cap DOMAIN ts :
+                    /\ ts[id].state = "suspended"
+                    /\ id \in DOMAIN ps
+                    /\ ps[id].timeoutAt > tnow}
       targeted == {id \in resumed :
                      /\ id \in DOMAIN ps
                      /\ TagsGet(ps[id].tags, "resonate:target") # NULL
@@ -274,15 +284,16 @@ OnPromiseTimeout(origin, id, tnow) ==
                                            promise |-> PromiseToRecord(p)]]
                         ELSE wf.outbox[k]]
         wfNew == [promises        |-> promises1,
-                  tasks           |-> ResumeTasks(tasks1, p.id, callbacks),
+                  tasks           |-> ResumeTasks(promises1, tasks1, p.id, callbacks, tnow),
                   promiseTimeouts |-> DelPromiseTimeout(wf.promiseTimeouts, p.id),
                   taskTimeouts    |-> ResumeTaskTimeouts(
+                                        promises1,
                                         IF t # NULL
                                         THEN DelTaskTimeout(wf.taskTimeouts, t.id)
                                         ELSE wf.taskTimeouts,
                                         tasks1, callbacks, tnow),
                   outbox          |-> ResumeMessages(unblocked,
-                                                     promises1, tasks1, callbacks)]
+                                                     promises1, tasks1, callbacks, tnow)]
     IN /\ blobs' = [blobs EXCEPT ![origin] = wfNew]
        /\ markers' = ReconcileMarkers(origin, wf, wfNew)
 
@@ -479,15 +490,16 @@ PromiseSettleAt(origin, req, Wrap(_)) ==
                                                 promise |-> PromiseToRecord(p)]]
                              ELSE wf.outbox[k]]
              wfNew == [promises        |-> promises1,
-                       tasks           |-> ResumeTasks(tasks1, p.id, callbacks),
+                       tasks           |-> ResumeTasks(promises1, tasks1, p.id, callbacks, now),
                        promiseTimeouts |-> DelPromiseTimeout(wf.promiseTimeouts, p.id),
                        taskTimeouts    |-> ResumeTaskTimeouts(
+                                             promises1,
                                              IF t # NULL
                                              THEN DelTaskTimeout(wf.taskTimeouts, t.id)
                                              ELSE wf.taskTimeouts,
                                              tasks1, callbacks, now),
                        outbox          |-> ResumeMessages(unblocked,
-                                                          promises1, tasks1, callbacks)]
+                                                          promises1, tasks1, callbacks, now)]
          IN /\ blobs' = [blobs EXCEPT ![origin] = wfNew]
             /\ markers' = ReconcileMarkers(origin, wf, wfNew)
             /\ res' = Wrap([status |-> 200, promise |-> PromiseToRecord(p)])
@@ -895,13 +907,14 @@ TaskFulfill(req) ==
                                               promise |-> PromiseToRecord(p)]]
                            ELSE wf.outbox[k]]
            wfNew == [promises        |-> promises1,
-                     tasks           |-> ResumeTasks(tasks1, p.id, callbacks),
+                     tasks           |-> ResumeTasks(promises1, tasks1, p.id, callbacks, now),
                      promiseTimeouts |-> DelPromiseTimeout(wf.promiseTimeouts, p.id),
                      taskTimeouts    |-> ResumeTaskTimeouts(
+                                           promises1,
                                            DelTaskTimeout(wf.taskTimeouts, t0.id),
                                            tasks1, callbacks, now),
                      outbox          |-> ResumeMessages(unblocked,
-                                                        promises1, tasks1, callbacks)]
+                                                        promises1, tasks1, callbacks, now)]
        IN /\ blobs' = [blobs EXCEPT ![origin] = wfNew]
           /\ markers' = ReconcileMarkers(origin, wf, wfNew)
           /\ res' = [status |-> 200, promise |-> PromiseToRecord(p)]

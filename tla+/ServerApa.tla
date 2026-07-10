@@ -180,10 +180,14 @@ SetMessage(ob, address, msg) ==
 (* The resume cascade, per variable (00-resume). `ts` has the settled       *)
 (* promise's task already fulfilled, so a self-callback is a no-op.         *)
 
-\* @type: (Str -> $task, Str, Set(Str)) => (Str -> $task);
-ResumeTasks(ts, awaitedId, awaiterIds) ==
+\* @type: (Str -> $promise, Str -> $task, Str, Set(Str), Int) => (Str -> $task);
+ResumeTasks(ps, ts, awaitedId, awaiterIds, tnow) ==
   [id \in DOMAIN ts |->
-     IF id \in awaiterIds THEN
+     IF /\ id \in awaiterIds
+        \* TIMEOUT ALWAYS WINS: an expired awaiter is dead weight
+        /\ id \in DOMAIN ps
+        /\ ps[id].timeoutAt > tnow
+     THEN
        LET t0 == ts[id] IN
        IF t0.state = "suspended" THEN
          [t0 EXCEPT !.state = "pending", !.resumes = {awaitedId}]
@@ -193,19 +197,23 @@ ResumeTasks(ts, awaitedId, awaiterIds) ==
          t0
      ELSE ts[id]]
 
-\* @type: (<<Str, Int>> -> Int, Str -> $task, Set(Str), Int) => (<<Str, Int>> -> Int);
-ResumeTaskTimeouts(tts, ts, awaiterIds, tnow) ==
+\* @type: (Str -> $promise, <<Str, Int>> -> Int, Str -> $task, Set(Str), Int) => (<<Str, Int>> -> Int);
+ResumeTaskTimeouts(ps, tts, ts, awaiterIds, tnow) ==
   LET retryTimeout == config.retryTimeout
       resumed == {id \in awaiterIds \intersect DOMAIN ts :
-                    ts[id].state = "suspended"}
+                    /\ ts[id].state = "suspended"
+                    /\ id \in DOMAIN ps
+                    /\ ps[id].timeoutAt > tnow}
       keys == {<<id, 0>> : id \in resumed}
   IN [k \in DOMAIN tts \union keys |->
         IF k \in keys THEN tnow + retryTimeout ELSE tts[k]]
 
-\* @type: (<<Str, Str>> -> $entry, Str -> $promise, Str -> $task, Set(Str)) => (<<Str, Str>> -> $entry);
-ResumeMessages(ob, ps, ts, awaiterIds) ==
+\* @type: (<<Str, Str>> -> $entry, Str -> $promise, Str -> $task, Set(Str), Int) => (<<Str, Str>> -> $entry);
+ResumeMessages(ob, ps, ts, awaiterIds, tnow) ==
   LET resumed == {id \in awaiterIds \intersect DOMAIN ts :
-                    ts[id].state = "suspended"}
+                    /\ ts[id].state = "suspended"
+                    /\ id \in DOMAIN ps
+                    /\ ps[id].timeoutAt > tnow}
       targeted == {id \in resumed :
                      id \in DOMAIN ps /\ TagsGet(ps[id].tags, "resonate:target") # ""}
       \* @type: Set(<<Str, Str>>);
@@ -257,13 +265,14 @@ OnPromiseTimeout(id, tnow) ==
                         ELSE outbox[k]]
     IN /\ promises' = promises1
        /\ promiseTimeouts' = DelPromiseTimeout(promiseTimeouts, p.id)
-       /\ tasks' = ResumeTasks(tasks1, p.id, callbacks)
+       /\ tasks' = ResumeTasks(promises1, tasks1, p.id, callbacks, tnow)
        /\ taskTimeouts' = ResumeTaskTimeouts(
+                            promises1,
                             IF hasTask
                             THEN DelTaskTimeout(taskTimeouts, p.id)
                             ELSE taskTimeouts,
                             tasks1, callbacks, tnow)
-       /\ outbox' = ResumeMessages(unblocked, promises1, tasks1, callbacks)
+       /\ outbox' = ResumeMessages(unblocked, promises1, tasks1, callbacks, tnow)
 
 \* @type: (Str, Int) => Bool;
 OnTaskRetryTimeout(id, tnow) ==
@@ -408,13 +417,14 @@ PromiseSettle(req) ==
                         ELSE outbox[k]]
     IN /\ promises' = promises1
        /\ promiseTimeouts' = DelPromiseTimeout(promiseTimeouts, p.id)
-       /\ tasks' = ResumeTasks(tasks1, p.id, callbacks)
+       /\ tasks' = ResumeTasks(promises1, tasks1, p.id, callbacks, now)
        /\ taskTimeouts' = ResumeTaskTimeouts(
+                            promises1,
                             IF hasTask
                             THEN DelTaskTimeout(taskTimeouts, p.id)
                             ELSE taskTimeouts,
                             tasks1, callbacks, now)
-       /\ outbox' = ResumeMessages(unblocked, promises1, tasks1, callbacks)
+       /\ outbox' = ResumeMessages(unblocked, promises1, tasks1, callbacks, now)
   ELSE
     \* absent-pending (already settled or projected): no state effect
     UNCHANGED serverVars
@@ -645,10 +655,11 @@ TaskFulfill(req) ==
                         ELSE outbox[k]]
     IN /\ promises' = promises1
        /\ promiseTimeouts' = DelPromiseTimeout(promiseTimeouts, p.id)
-       /\ tasks' = ResumeTasks(tasks1, p.id, callbacks)
-       /\ taskTimeouts' = ResumeTaskTimeouts(DelTaskTimeout(taskTimeouts, req.id),
+       /\ tasks' = ResumeTasks(promises1, tasks1, p.id, callbacks, now)
+       /\ taskTimeouts' = ResumeTaskTimeouts(promises1,
+                                             DelTaskTimeout(taskTimeouts, req.id),
                                              tasks1, callbacks, now)
-       /\ outbox' = ResumeMessages(unblocked, promises1, tasks1, callbacks)
+       /\ outbox' = ResumeMessages(unblocked, promises1, tasks1, callbacks, now)
 
 \* T-08 task.release
 \* @type: { id: Str, version: Int } => Bool;
@@ -924,9 +935,12 @@ NonAcquiredTaskNoPidOrTtl ==
     tasks[id].state # "acquired"
       => tasks[id].pid = "" /\ tasks[id].ttl = -1
 
+\* Deadline-aware under TIMEOUT ALWAYS WINS (see Server.tla).
 SuspendedTaskHasCallback ==
   \A id \in DOMAIN tasks :
-    tasks[id].state = "suspended"
+    (/\ tasks[id].state = "suspended"
+     /\ id \in DOMAIN promises
+     /\ promises[id].timeoutAt > now)
       => \E pid \in DOMAIN promises : id \in promises[pid].callbacks
 
 FulfilledTaskHasEmptyResumes ==
