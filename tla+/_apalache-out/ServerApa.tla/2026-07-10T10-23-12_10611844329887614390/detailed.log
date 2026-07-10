@@ -1,0 +1,13 @@
+2026-07-10T10:23:12,392 [main] INFO  a.f.a.t.Tool$ - # APALACHE version: 0.58.3 | build: f4ac7ff
+2026-07-10T10:23:12,402 [main] INFO  a.f.a.t.t.o.TypeCheckCmd - Type checking ServerApa.tla
+2026-07-10T10:23:12,604 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #0: SanyParser
+2026-07-10T10:23:13,272 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #0: SanyParser [OK]
+2026-07-10T10:23:13,272 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #1: TypeCheckerSnowcat
+2026-07-10T10:23:13,272 [main] INFO  a.f.a.t.p.t.EtcTypeCheckerPassImpl -  > Running Snowcat .::.
+2026-07-10T10:23:14,741 [main] ERROR a.f.a.t.p.t.LoggingTypeCheckerListener - [ServerApa.tla:211:16-211:25]: Annotation required. Found 2 matching operator signatures ((a1525, a1526) => <<a1525, a1526>>) or ((a1525, a1525) => Seq(a1525)) for arguments Str and Str
+2026-07-10T10:23:14,790 [main] ERROR a.f.a.t.p.t.LoggingTypeCheckerListener - [ServerApa.tla:211:7-211:44]: Error when computing the type of keys
+2026-07-10T10:23:14,821 [main] INFO  a.f.a.t.p.t.EtcTypeCheckerPassImpl -  > Snowcat asks you to fix the types. Meow.
+2026-07-10T10:23:14,846 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #1: TypeCheckerSnowcat [FAIL]
+2026-07-10T10:23:14,846 [main] INFO  a.f.a.t.Tool$ - Type checker [FAILED]
+2026-07-10T10:23:14,846 [main] INFO  a.f.a.t.Tool$ - It took me 0 days  0 hours  0 min  2 sec
+2026-07-10T10:23:14,846 [main] INFO  a.f.a.t.Tool$ - Total time: 2.452 sec

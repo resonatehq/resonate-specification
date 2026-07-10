@@ -1,0 +1,14 @@
+2026-07-10T10:21:24,554 [main] INFO  a.f.a.t.Tool$ - # APALACHE version: 0.58.3 | build: f4ac7ff
+2026-07-10T10:21:24,574 [main] INFO  a.f.a.t.t.o.TypeCheckCmd - Type checking ServerApa.tla
+2026-07-10T10:21:24,729 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #0: SanyParser
+2026-07-10T10:21:25,352 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #0: SanyParser [OK]
+2026-07-10T10:21:25,353 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #1: TypeCheckerSnowcat
+2026-07-10T10:21:25,354 [main] INFO  a.f.a.t.p.t.EtcTypeCheckerPassImpl -  > Running Snowcat .::.
+2026-07-10T10:21:25,711 [main] ERROR a.f.a.t.p.t.LoggingTypeCheckerListener - [ServerApa.tla:86:30-86:34]: Cannot apply pr to the argument 1 in pr[1].
+2026-07-10T10:21:25,765 [main] ERROR a.f.a.t.p.t.LoggingTypeCheckerListener - [ServerApa.tla:86:45-86:49]: Cannot apply pr to the argument 2 in pr[2].
+2026-07-10T10:21:25,814 [main] ERROR a.f.a.t.p.t.LoggingTypeCheckerListener - [ServerApa.tla:85:5-86:58]: Error when computing the type of LAMBDA
+2026-07-10T10:21:25,844 [main] INFO  a.f.a.t.p.t.EtcTypeCheckerPassImpl -  > Snowcat asks you to fix the types. Meow.
+2026-07-10T10:21:25,868 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #1: TypeCheckerSnowcat [FAIL]
+2026-07-10T10:21:25,869 [main] INFO  a.f.a.t.Tool$ - Type checker [FAILED]
+2026-07-10T10:21:25,869 [main] INFO  a.f.a.t.Tool$ - It took me 0 days  0 hours  0 min  1 sec
+2026-07-10T10:21:25,869 [main] INFO  a.f.a.t.Tool$ - Total time: 1.313 sec

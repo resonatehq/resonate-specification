@@ -1,0 +1,19 @@
+2026-07-10T10:22:48,016 [main] INFO  a.f.a.t.Tool$ - # APALACHE version: 0.58.3 | build: f4ac7ff
+2026-07-10T10:22:48,033 [main] INFO  a.f.a.t.t.o.TypeCheckCmd - Type checking ServerApa.tla
+2026-07-10T10:22:48,290 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #0: SanyParser
+2026-07-10T10:22:48,968 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #0: SanyParser [OK]
+2026-07-10T10:22:48,969 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #1: TypeCheckerSnowcat
+2026-07-10T10:22:48,969 [main] INFO  a.f.a.t.p.t.EtcTypeCheckerPassImpl -  > Running Snowcat .::.
+2026-07-10T10:22:50,079 [main] ERROR a.f.a.t.p.t.LoggingTypeCheckerListener - [ServerApa.tla:720:6-720:33]: Annotation required. Found 2 matching operator signatures ((a1696, a1697) => <<a1696, a1697>>) or ((a1696, a1696) => Seq(a1696)) for arguments Str and Str
+2026-07-10T10:22:50,155 [main] ERROR a.f.a.t.p.t.LoggingTypeCheckerListener - [ServerApa.tla:720:4-720:35]: Annotation required. Found 2 matching operator signatures ((a1695) => <<a1695>>) or ((a1695) => Seq(a1695)) for argument a3267
+2026-07-10T10:22:50,202 [main] ERROR a.f.a.t.p.t.LoggingTypeCheckerListener - [ServerApa.tla:721:15-721:38]: Annotation required. Found 2 matching operator signatures ((a1701, a1702) => <<a1701, a1702>>) or ((a1701, a1701) => Seq(a1701)) for arguments Str and Str
+2026-07-10T10:22:50,255 [main] ERROR a.f.a.t.p.t.LoggingTypeCheckerListener - [ServerApa.tla:721:13-721:40]: Annotation required. Found 2 matching operator signatures ((a1700) => <<a1700>>) or ((a1700) => Seq(a1700)) for argument a3277
+2026-07-10T10:22:50,312 [main] ERROR a.f.a.t.p.t.LoggingTypeCheckerListener - [ServerApa.tla:722:15-722:38]: Annotation required. Found 2 matching operator signatures ((a1707, a1708) => <<a1707, a1708>>) or ((a1707, a1707) => Seq(a1707)) for arguments Str and Str
+2026-07-10T10:22:50,352 [main] ERROR a.f.a.t.p.t.LoggingTypeCheckerListener - [ServerApa.tla:722:41-722:65]: Annotation required. Found 2 matching operator signatures ((a1709, a1710) => <<a1709, a1710>>) or ((a1709, a1709) => Seq(a1709)) for arguments Str and Str
+2026-07-10T10:22:50,393 [main] ERROR a.f.a.t.p.t.LoggingTypeCheckerListener - [ServerApa.tla:722:13-722:67]: Annotation required. Found 2 matching operator signatures ((a1705, a1706) => <<a1705, a1706>>) or ((a1705, a1705) => Seq(a1705)) for arguments a3290 and a3294
+2026-07-10T10:22:50,436 [main] ERROR a.f.a.t.p.t.LoggingTypeCheckerListener - [ServerApa.tla:719:1-723:30]: Error when computing the type of TagOptions
+2026-07-10T10:22:50,458 [main] INFO  a.f.a.t.p.t.EtcTypeCheckerPassImpl -  > Snowcat asks you to fix the types. Meow.
+2026-07-10T10:22:50,485 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #1: TypeCheckerSnowcat [FAIL]
+2026-07-10T10:22:50,485 [main] INFO  a.f.a.t.Tool$ - Type checker [FAILED]
+2026-07-10T10:22:50,485 [main] INFO  a.f.a.t.Tool$ - It took me 0 days  0 hours  0 min  2 sec
+2026-07-10T10:22:50,485 [main] INFO  a.f.a.t.Tool$ - Total time: 2.466 sec

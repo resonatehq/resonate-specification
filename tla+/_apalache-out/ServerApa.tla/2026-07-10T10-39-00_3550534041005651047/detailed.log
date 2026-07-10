@@ -1,0 +1,125 @@
+2026-07-10T10:39:00,753 [main] INFO  a.f.a.t.Tool$ - # APALACHE version: 0.58.3 | build: f4ac7ff
+2026-07-10T10:39:00,778 [main] INFO  a.f.a.t.t.o.CheckCmd - Tuning: search.outputTraces=false
+2026-07-10T10:39:01,016 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #0: SanyParser
+2026-07-10T10:39:01,773 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #0: SanyParser [OK]
+2026-07-10T10:39:01,774 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #1: TypeCheckerSnowcat
+2026-07-10T10:39:01,775 [main] INFO  a.f.a.t.p.t.EtcTypeCheckerPassImpl -  > Running Snowcat .::.
+2026-07-10T10:39:04,758 [main] INFO  a.f.a.t.p.t.EtcTypeCheckerPassImpl -  > Your types are purrfect!
+2026-07-10T10:39:04,758 [main] INFO  a.f.a.t.p.t.EtcTypeCheckerPassImpl -  > All expressions are typed
+2026-07-10T10:39:04,758 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #1: TypeCheckerSnowcat [OK]
+2026-07-10T10:39:04,758 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #2: ConfigurationPass
+2026-07-10T10:39:04,766 [main] INFO  a.f.a.t.p.p.ConfigurationPassImpl -   > Set the initialization predicate to Init
+2026-07-10T10:39:04,767 [main] INFO  a.f.a.t.p.p.ConfigurationPassImpl -   > Set the transition predicate to Next
+2026-07-10T10:39:04,768 [main] INFO  a.f.a.t.p.p.ConfigurationPassImpl -   > Set the constant initialization predicate to CInit
+2026-07-10T10:39:04,768 [main] INFO  a.f.a.t.p.p.ConfigurationPassImpl -   > Set an invariant to IndInv
+2026-07-10T10:39:04,778 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #2: ConfigurationPass [OK]
+2026-07-10T10:39:04,778 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #3: DesugarerPass
+2026-07-10T10:39:04,778 [main] INFO  a.f.a.t.p.p.DesugarerPassImpl -   > Desugaring...
+2026-07-10T10:39:04,804 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #3: DesugarerPass [OK]
+2026-07-10T10:39:04,805 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #4: InlinePass
+2026-07-10T10:39:04,805 [main] INFO  a.f.a.t.p.p.InlinePassImpl - Leaving only relevant operators: CInit, CInitPrimed, IndInv, Init, InitPrimed, Next
+2026-07-10T10:39:05,025 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #4: InlinePass [OK]
+2026-07-10T10:39:05,025 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #5: TemporalPass
+2026-07-10T10:39:05,025 [main] INFO  a.f.a.t.p.p.TemporalPassImpl -   > Rewriting temporal operators...
+2026-07-10T10:39:05,025 [main] INFO  a.f.a.t.p.p.TemporalPassImpl -   > No temporal property specified, nothing to encode
+2026-07-10T10:39:05,025 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #5: TemporalPass [OK]
+2026-07-10T10:39:05,026 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #6: InlinePass
+2026-07-10T10:39:05,026 [main] INFO  a.f.a.t.p.p.InlinePassImpl - Leaving only relevant operators: CInit, CInitPrimed, IndInv, Init, InitPrimed, Next
+2026-07-10T10:39:05,090 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #6: InlinePass [OK]
+2026-07-10T10:39:05,091 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #7: PrimingPass
+2026-07-10T10:39:05,095 [main] INFO  a.f.a.t.p.a.PrimingPassImpl -   > Introducing CInitPrimed for CInit'
+2026-07-10T10:39:05,304 [main] INFO  a.f.a.t.p.a.PrimingPassImpl -   > Introducing InitPrimed for Init'
+2026-07-10T10:39:05,305 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #7: PrimingPass [OK]
+2026-07-10T10:39:05,306 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #8: VCGen
+2026-07-10T10:39:05,307 [main] INFO  a.f.a.t.b.p.VCGenPassImpl -   > Producing verification conditions from the invariant IndInv
+2026-07-10T10:39:05,314 [main] INFO  a.f.a.t.b.VCGenerator -   > VCGen produced 21 verification condition(s)
+2026-07-10T10:39:05,317 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #8: VCGen [OK]
+2026-07-10T10:39:05,318 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #9: PreprocessingPass
+2026-07-10T10:39:05,318 [main] INFO  a.f.a.t.p.p.PreproPassImpl -   > Before preprocessing: unique renaming
+2026-07-10T10:39:05,327 [main] INFO  a.f.a.t.p.p.PreproPassImpl -  > Applying standard transformations:
+2026-07-10T10:39:05,327 [main] INFO  a.f.a.t.p.p.PreproPassImpl -   > PrimePropagation
+2026-07-10T10:39:05,335 [main] INFO  a.f.a.t.p.p.PreproPassImpl -   > Desugarer
+2026-07-10T10:39:05,379 [main] INFO  a.f.a.t.p.p.PreproPassImpl -   > UniqueRenamer
+2026-07-10T10:39:05,429 [main] INFO  a.f.a.t.p.p.PreproPassImpl -   > Normalizer
+2026-07-10T10:39:05,455 [main] INFO  a.f.a.t.p.p.PreproPassImpl -   > SetMembershipSimplifier
+2026-07-10T10:39:05,472 [main] INFO  a.f.a.t.p.p.PreproPassImpl -   > Keramelizer
+2026-07-10T10:39:05,513 [main] INFO  a.f.a.t.p.p.PreproPassImpl -   > After preprocessing: UniqueRenamer
+2026-07-10T10:39:05,584 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #9: PreprocessingPass [OK]
+2026-07-10T10:39:05,584 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #10: TransitionFinderPass
+2026-07-10T10:39:05,638 [main] INFO  a.f.a.t.p.a.TransitionPassImpl -   > Found 1 initializing transitions
+2026-07-10T10:39:05,707 [main] INFO  a.f.a.t.p.a.TransitionPassImpl -   > Found 60 transitions
+2026-07-10T10:39:05,707 [main] INFO  a.f.a.t.p.a.TransitionPassImpl -   > Found constant initializer CInit
+2026-07-10T10:39:05,714 [main] INFO  a.f.a.t.p.a.TransitionPassImpl -   > Applying unique renaming
+2026-07-10T10:39:05,778 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #10: TransitionFinderPass [OK]
+2026-07-10T10:39:05,778 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #11: OptimizationPass
+2026-07-10T10:39:05,781 [main] INFO  a.f.a.t.p.p.OptPassImpl -  > Applying optimizations:
+2026-07-10T10:39:05,781 [main] INFO  a.f.a.t.p.p.OptPassImpl -   > ConstSimplifier
+2026-07-10T10:39:05,914 [main] INFO  a.f.a.t.p.p.OptPassImpl -   > ExprOptimizer
+2026-07-10T10:39:05,998 [main] INFO  a.f.a.t.p.p.OptPassImpl -   > SetMembershipSimplifier
+2026-07-10T10:39:06,007 [main] INFO  a.f.a.t.p.p.OptPassImpl -   > ConstSimplifier
+2026-07-10T10:39:06,106 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #11: OptimizationPass [OK]
+2026-07-10T10:39:06,106 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #12: AnalysisPass
+2026-07-10T10:39:06,110 [main] INFO  a.f.a.t.b.p.AnalysisPassImpl -  > Marking skolemizable existentials and sets to be expanded...
+2026-07-10T10:39:06,110 [main] INFO  a.f.a.t.b.p.AnalysisPassImpl -   > Skolemization
+2026-07-10T10:39:06,120 [main] INFO  a.f.a.t.b.p.AnalysisPassImpl -   > Expansion
+2026-07-10T10:39:06,160 [main] INFO  a.f.a.t.b.p.AnalysisPassImpl -   > Remove unused let-in defs
+2026-07-10T10:39:06,199 [main] INFO  a.f.a.t.b.p.AnalysisPassImpl -  > Running analyzers...
+2026-07-10T10:39:06,219 [main] INFO  a.f.a.t.b.p.AnalysisPassImpl -   > Introduced expression grades
+2026-07-10T10:39:06,219 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #12: AnalysisPass [OK]
+2026-07-10T10:39:06,219 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #13: BoundedChecker
+2026-07-10T10:39:06,252 [main] DEBUG a.f.a.t.b.s.Z3SolverContext - Creating Z3 solver context 0
+2026-07-10T10:39:07,000 [main] DEBUG a.f.a.t.b.t.TransitionExecutorImpl - Initializing CONSTANTS
+2026-07-10T10:39:07,038 [main] DEBUG a.f.a.t.b.t.TransitionExecutorImpl - Step #0, transition #0
+2026-07-10T10:39:07,039 [main] DEBUG a.f.a.t.b.t.TransitionExecutorImpl - Translating to SMT
+2026-07-10T10:39:07,048 [main] DEBUG a.f.a.t.b.SeqModelChecker - Step 0: Transition #0. Is it enabled?
+2026-07-10T10:39:07,051 [main] DEBUG a.f.a.t.b.SeqModelChecker - Step 0: Transition #0 is enabled
+2026-07-10T10:39:07,051 [main] INFO  a.f.a.t.b.SeqModelChecker - State 0: Checking 21 state invariants
+2026-07-10T10:39:07,051 [main] DEBUG a.f.a.t.b.SeqModelChecker - State 0: Checking state invariant 0
+2026-07-10T10:39:07,052 [main] INFO  a.f.a.t.b.SeqModelChecker - State 0: state invariant 0 holds.
+2026-07-10T10:39:07,056 [main] DEBUG a.f.a.t.b.SeqModelChecker - State 0: Checking state invariant 1
+2026-07-10T10:39:07,060 [main] INFO  a.f.a.t.b.SeqModelChecker - State 0: state invariant 1 holds.
+2026-07-10T10:39:07,060 [main] DEBUG a.f.a.t.b.SeqModelChecker - State 0: Checking state invariant 2
+2026-07-10T10:39:07,062 [main] INFO  a.f.a.t.b.SeqModelChecker - State 0: state invariant 2 holds.
+2026-07-10T10:39:07,062 [main] DEBUG a.f.a.t.b.SeqModelChecker - State 0: Checking state invariant 3
+2026-07-10T10:39:07,063 [main] INFO  a.f.a.t.b.SeqModelChecker - State 0: state invariant 3 holds.
+2026-07-10T10:39:07,063 [main] DEBUG a.f.a.t.b.SeqModelChecker - State 0: Checking state invariant 4
+2026-07-10T10:39:07,063 [main] INFO  a.f.a.t.b.SeqModelChecker - State 0: state invariant 4 holds.
+2026-07-10T10:39:07,063 [main] DEBUG a.f.a.t.b.SeqModelChecker - State 0: Checking state invariant 5
+2026-07-10T10:39:07,063 [main] INFO  a.f.a.t.b.SeqModelChecker - State 0: state invariant 5 holds.
+2026-07-10T10:39:07,063 [main] DEBUG a.f.a.t.b.SeqModelChecker - State 0: Checking state invariant 6
+2026-07-10T10:39:07,064 [main] INFO  a.f.a.t.b.SeqModelChecker - State 0: state invariant 6 holds.
+2026-07-10T10:39:07,064 [main] DEBUG a.f.a.t.b.SeqModelChecker - State 0: Checking state invariant 7
+2026-07-10T10:39:07,064 [main] INFO  a.f.a.t.b.SeqModelChecker - State 0: state invariant 7 holds.
+2026-07-10T10:39:07,064 [main] DEBUG a.f.a.t.b.SeqModelChecker - State 0: Checking state invariant 8
+2026-07-10T10:39:07,064 [main] INFO  a.f.a.t.b.SeqModelChecker - State 0: state invariant 8 holds.
+2026-07-10T10:39:07,065 [main] DEBUG a.f.a.t.b.SeqModelChecker - State 0: Checking state invariant 9
+2026-07-10T10:39:07,065 [main] INFO  a.f.a.t.b.SeqModelChecker - State 0: state invariant 9 holds.
+2026-07-10T10:39:07,065 [main] DEBUG a.f.a.t.b.SeqModelChecker - State 0: Checking state invariant 10
+2026-07-10T10:39:07,065 [main] INFO  a.f.a.t.b.SeqModelChecker - State 0: state invariant 10 holds.
+2026-07-10T10:39:07,065 [main] DEBUG a.f.a.t.b.SeqModelChecker - State 0: Checking state invariant 11
+2026-07-10T10:39:07,065 [main] INFO  a.f.a.t.b.SeqModelChecker - State 0: state invariant 11 holds.
+2026-07-10T10:39:07,065 [main] DEBUG a.f.a.t.b.SeqModelChecker - State 0: Checking state invariant 12
+2026-07-10T10:39:07,066 [main] INFO  a.f.a.t.b.SeqModelChecker - State 0: state invariant 12 holds.
+2026-07-10T10:39:07,066 [main] DEBUG a.f.a.t.b.SeqModelChecker - State 0: Checking state invariant 13
+2026-07-10T10:39:07,066 [main] INFO  a.f.a.t.b.SeqModelChecker - State 0: state invariant 13 holds.
+2026-07-10T10:39:07,066 [main] DEBUG a.f.a.t.b.SeqModelChecker - State 0: Checking state invariant 14
+2026-07-10T10:39:07,066 [main] INFO  a.f.a.t.b.SeqModelChecker - State 0: state invariant 14 holds.
+2026-07-10T10:39:07,066 [main] DEBUG a.f.a.t.b.SeqModelChecker - State 0: Checking state invariant 15
+2026-07-10T10:39:07,066 [main] INFO  a.f.a.t.b.SeqModelChecker - State 0: state invariant 15 holds.
+2026-07-10T10:39:07,067 [main] DEBUG a.f.a.t.b.SeqModelChecker - State 0: Checking state invariant 16
+2026-07-10T10:39:07,067 [main] INFO  a.f.a.t.b.SeqModelChecker - State 0: state invariant 16 holds.
+2026-07-10T10:39:07,067 [main] DEBUG a.f.a.t.b.SeqModelChecker - State 0: Checking state invariant 17
+2026-07-10T10:39:07,067 [main] INFO  a.f.a.t.b.SeqModelChecker - State 0: state invariant 17 holds.
+2026-07-10T10:39:07,067 [main] DEBUG a.f.a.t.b.SeqModelChecker - State 0: Checking state invariant 18
+2026-07-10T10:39:07,067 [main] INFO  a.f.a.t.b.SeqModelChecker - State 0: state invariant 18 holds.
+2026-07-10T10:39:07,067 [main] DEBUG a.f.a.t.b.SeqModelChecker - State 0: Checking state invariant 19
+2026-07-10T10:39:07,067 [main] INFO  a.f.a.t.b.SeqModelChecker - State 0: state invariant 19 holds.
+2026-07-10T10:39:07,068 [main] DEBUG a.f.a.t.b.SeqModelChecker - State 0: Checking state invariant 20
+2026-07-10T10:39:07,068 [main] INFO  a.f.a.t.b.SeqModelChecker - State 0: state invariant 20 holds.
+2026-07-10T10:39:07,068 [main] INFO  a.f.a.t.b.t.TransitionExecutorImpl - Step 0: picking a transition out of 1 transition(s)
+2026-07-10T10:39:07,073 [main] DEBUG a.f.a.t.b.s.Z3SolverContext - Disposing Z3 solver context 0
+2026-07-10T10:39:07,075 [main] INFO  a.f.a.t.b.p.BoundedCheckerPassImpl - The outcome is: NoError
+2026-07-10T10:39:07,075 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #13: BoundedChecker [OK]
+2026-07-10T10:39:07,075 [main] INFO  a.f.a.t.Tool$ - Checker reports no error up to computation length 0
+2026-07-10T10:39:07,076 [main] INFO  a.f.a.t.Tool$ - It took me 0 days  0 hours  0 min  6 sec
+2026-07-10T10:39:07,076 [main] INFO  a.f.a.t.Tool$ - Total time: 6.319 sec

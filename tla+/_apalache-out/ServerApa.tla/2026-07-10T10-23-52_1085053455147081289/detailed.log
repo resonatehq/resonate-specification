@@ -1,0 +1,160 @@
+2026-07-10T10:23:52,384 [main] INFO  a.f.a.t.Tool$ - # APALACHE version: 0.58.3 | build: f4ac7ff
+2026-07-10T10:23:52,407 [main] INFO  a.f.a.t.t.o.CheckCmd - Tuning: search.outputTraces=false
+2026-07-10T10:23:52,648 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #0: SanyParser
+2026-07-10T10:23:53,359 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #0: SanyParser [OK]
+2026-07-10T10:23:53,359 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #1: TypeCheckerSnowcat
+2026-07-10T10:23:53,359 [main] INFO  a.f.a.t.p.t.EtcTypeCheckerPassImpl -  > Running Snowcat .::.
+2026-07-10T10:23:56,591 [main] INFO  a.f.a.t.p.t.EtcTypeCheckerPassImpl -  > Your types are purrfect!
+2026-07-10T10:23:56,591 [main] INFO  a.f.a.t.p.t.EtcTypeCheckerPassImpl -  > All expressions are typed
+2026-07-10T10:23:56,591 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #1: TypeCheckerSnowcat [OK]
+2026-07-10T10:23:56,592 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #2: ConfigurationPass
+2026-07-10T10:23:56,600 [main] INFO  a.f.a.t.p.p.ConfigurationPassImpl -   > Set the initialization predicate to Init
+2026-07-10T10:23:56,600 [main] INFO  a.f.a.t.p.p.ConfigurationPassImpl -   > Set the transition predicate to Next
+2026-07-10T10:23:56,602 [main] INFO  a.f.a.t.p.p.ConfigurationPassImpl -   > Set an invariant to Inv
+2026-07-10T10:23:56,614 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #2: ConfigurationPass [OK]
+2026-07-10T10:23:56,614 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #3: DesugarerPass
+2026-07-10T10:23:56,614 [main] INFO  a.f.a.t.p.p.DesugarerPassImpl -   > Desugaring...
+2026-07-10T10:23:56,650 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #3: DesugarerPass [OK]
+2026-07-10T10:23:56,650 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #4: InlinePass
+2026-07-10T10:23:56,650 [main] INFO  a.f.a.t.p.p.InlinePassImpl - Leaving only relevant operators: CInitPrimed, Init, InitPrimed, Inv, Next
+2026-07-10T10:23:56,879 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #4: InlinePass [OK]
+2026-07-10T10:23:56,879 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #5: TemporalPass
+2026-07-10T10:23:56,879 [main] INFO  a.f.a.t.p.p.TemporalPassImpl -   > Rewriting temporal operators...
+2026-07-10T10:23:56,880 [main] INFO  a.f.a.t.p.p.TemporalPassImpl -   > No temporal property specified, nothing to encode
+2026-07-10T10:23:56,880 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #5: TemporalPass [OK]
+2026-07-10T10:23:56,880 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #6: InlinePass
+2026-07-10T10:23:56,880 [main] INFO  a.f.a.t.p.p.InlinePassImpl - Leaving only relevant operators: CInitPrimed, Init, InitPrimed, Inv, Next
+2026-07-10T10:23:56,975 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #6: InlinePass [OK]
+2026-07-10T10:23:56,975 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #7: PrimingPass
+2026-07-10T10:23:56,982 [main] INFO  a.f.a.t.p.a.PrimingPassImpl -   > Introducing InitPrimed for Init'
+2026-07-10T10:23:57,285 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #7: PrimingPass [OK]
+2026-07-10T10:23:57,286 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #8: VCGen
+2026-07-10T10:23:57,286 [main] INFO  a.f.a.t.b.p.VCGenPassImpl -   > Producing verification conditions from the invariant Inv
+2026-07-10T10:23:57,289 [main] INFO  a.f.a.t.b.VCGenerator -   > VCGen produced 8 verification condition(s)
+2026-07-10T10:23:57,291 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #8: VCGen [OK]
+2026-07-10T10:23:57,291 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #9: PreprocessingPass
+2026-07-10T10:23:57,291 [main] INFO  a.f.a.t.p.p.PreproPassImpl -   > Before preprocessing: unique renaming
+2026-07-10T10:23:57,314 [main] INFO  a.f.a.t.p.p.PreproPassImpl -  > Applying standard transformations:
+2026-07-10T10:23:57,315 [main] INFO  a.f.a.t.p.p.PreproPassImpl -   > PrimePropagation
+2026-07-10T10:23:57,324 [main] INFO  a.f.a.t.p.p.PreproPassImpl -   > Desugarer
+2026-07-10T10:23:57,406 [main] INFO  a.f.a.t.p.p.PreproPassImpl -   > UniqueRenamer
+2026-07-10T10:23:57,461 [main] INFO  a.f.a.t.p.p.PreproPassImpl -   > Normalizer
+2026-07-10T10:23:57,494 [main] INFO  a.f.a.t.p.p.PreproPassImpl -   > SetMembershipSimplifier
+2026-07-10T10:23:57,522 [main] INFO  a.f.a.t.p.p.PreproPassImpl -   > Keramelizer
+2026-07-10T10:23:57,569 [main] INFO  a.f.a.t.p.p.PreproPassImpl -   > After preprocessing: UniqueRenamer
+2026-07-10T10:23:57,628 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #9: PreprocessingPass [OK]
+2026-07-10T10:23:57,628 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #10: TransitionFinderPass
+2026-07-10T10:23:57,671 [main] INFO  a.f.a.t.p.a.TransitionPassImpl -   > Found 1 initializing transitions
+2026-07-10T10:23:57,746 [main] INFO  a.f.a.t.p.a.TransitionPassImpl -   > Found 60 transitions
+2026-07-10T10:23:57,748 [main] INFO  a.f.a.t.p.a.TransitionPassImpl -   > No constant initializer
+2026-07-10T10:23:57,750 [main] INFO  a.f.a.t.p.a.TransitionPassImpl -   > Applying unique renaming
+2026-07-10T10:23:57,825 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #10: TransitionFinderPass [OK]
+2026-07-10T10:23:57,826 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #11: OptimizationPass
+2026-07-10T10:23:57,829 [main] INFO  a.f.a.t.p.p.OptPassImpl -  > Applying optimizations:
+2026-07-10T10:23:57,829 [main] INFO  a.f.a.t.p.p.OptPassImpl -   > ConstSimplifier
+2026-07-10T10:23:57,977 [main] INFO  a.f.a.t.p.p.OptPassImpl -   > ExprOptimizer
+2026-07-10T10:23:58,032 [main] INFO  a.f.a.t.p.p.OptPassImpl -   > SetMembershipSimplifier
+2026-07-10T10:23:58,051 [main] INFO  a.f.a.t.p.p.OptPassImpl -   > ConstSimplifier
+2026-07-10T10:23:58,136 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #11: OptimizationPass [OK]
+2026-07-10T10:23:58,137 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #12: AnalysisPass
+2026-07-10T10:23:58,138 [main] INFO  a.f.a.t.b.p.AnalysisPassImpl -  > Marking skolemizable existentials and sets to be expanded...
+2026-07-10T10:23:58,138 [main] INFO  a.f.a.t.b.p.AnalysisPassImpl -   > Skolemization
+2026-07-10T10:23:58,158 [main] INFO  a.f.a.t.b.p.AnalysisPassImpl -   > Expansion
+2026-07-10T10:23:58,187 [main] INFO  a.f.a.t.b.p.AnalysisPassImpl -   > Remove unused let-in defs
+2026-07-10T10:23:58,209 [main] INFO  a.f.a.t.b.p.AnalysisPassImpl -  > Running analyzers...
+2026-07-10T10:23:58,222 [main] INFO  a.f.a.t.b.p.AnalysisPassImpl -   > Introduced expression grades
+2026-07-10T10:23:58,223 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #12: AnalysisPass [OK]
+2026-07-10T10:23:58,223 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #13: BoundedChecker
+2026-07-10T10:23:58,253 [main] DEBUG a.f.a.t.b.s.Z3SolverContext - Creating Z3 solver context 0
+2026-07-10T10:23:59,247 [main] DEBUG a.f.a.t.b.t.TransitionExecutorImpl - Step #0, transition #0
+2026-07-10T10:23:59,248 [main] DEBUG a.f.a.t.b.t.TransitionExecutorImpl - Translating to SMT
+2026-07-10T10:23:59,281 [main] DEBUG a.f.a.t.b.SeqModelChecker - Step 0: Transition #0. Is it enabled?
+2026-07-10T10:23:59,283 [main] DEBUG a.f.a.t.b.SeqModelChecker - Step 0: Transition #0 is enabled
+2026-07-10T10:23:59,283 [main] INFO  a.f.a.t.b.SeqModelChecker - State 0: Checking 8 state invariants
+2026-07-10T10:23:59,284 [main] DEBUG a.f.a.t.b.SeqModelChecker - State 0: Checking state invariant 0
+2026-07-10T10:23:59,286 [main] INFO  a.f.a.t.b.SeqModelChecker - State 0: state invariant 0 holds.
+2026-07-10T10:23:59,287 [main] DEBUG a.f.a.t.b.SeqModelChecker - State 0: Checking state invariant 1
+2026-07-10T10:23:59,288 [main] INFO  a.f.a.t.b.SeqModelChecker - State 0: state invariant 1 holds.
+2026-07-10T10:23:59,288 [main] DEBUG a.f.a.t.b.SeqModelChecker - State 0: Checking state invariant 2
+2026-07-10T10:23:59,288 [main] INFO  a.f.a.t.b.SeqModelChecker - State 0: state invariant 2 holds.
+2026-07-10T10:23:59,288 [main] DEBUG a.f.a.t.b.SeqModelChecker - State 0: Checking state invariant 3
+2026-07-10T10:23:59,288 [main] INFO  a.f.a.t.b.SeqModelChecker - State 0: state invariant 3 holds.
+2026-07-10T10:23:59,288 [main] DEBUG a.f.a.t.b.SeqModelChecker - State 0: Checking state invariant 4
+2026-07-10T10:23:59,288 [main] INFO  a.f.a.t.b.SeqModelChecker - State 0: state invariant 4 holds.
+2026-07-10T10:23:59,289 [main] DEBUG a.f.a.t.b.SeqModelChecker - State 0: Checking state invariant 5
+2026-07-10T10:23:59,289 [main] INFO  a.f.a.t.b.SeqModelChecker - State 0: state invariant 5 holds.
+2026-07-10T10:23:59,289 [main] DEBUG a.f.a.t.b.SeqModelChecker - State 0: Checking state invariant 6
+2026-07-10T10:23:59,290 [main] INFO  a.f.a.t.b.SeqModelChecker - State 0: state invariant 6 holds.
+2026-07-10T10:23:59,290 [main] DEBUG a.f.a.t.b.SeqModelChecker - State 0: Checking state invariant 7
+2026-07-10T10:23:59,291 [main] INFO  a.f.a.t.b.SeqModelChecker - State 0: state invariant 7 holds.
+2026-07-10T10:23:59,291 [main] INFO  a.f.a.t.b.t.TransitionExecutorImpl - Step 0: picking a transition out of 1 transition(s)
+2026-07-10T10:23:59,295 [main] DEBUG a.f.a.t.b.t.TransitionExecutorImpl - Step #1, transition #0
+2026-07-10T10:23:59,295 [main] DEBUG a.f.a.t.b.t.TransitionExecutorImpl - Translating to SMT
+2026-07-10T10:23:59,297 [main] ERROR a.f.a.t.b.r.SubstRule - This error may show up when CONSTANTS are not initialized.
+2026-07-10T10:23:59,297 [main] ERROR a.f.a.t.b.r.SubstRule - Check the manual: https://apalache-mc.org/docs/apalache/parameters.html
+2026-07-10T10:23:59,299 [main] DEBUG a.f.a.i.p.PassChainExecutor - Adapted exception intercepted: 
+at.forsyte.apalache.tla.pp.TlaInputError: SubstRule: Variable PromiseIds is not assigned a value
+	at at.forsyte.apalache.tla.bmcmt.rules.SubstRule.apply(SubstRule.scala:35)
+	at at.forsyte.apalache.tla.bmcmt.SymbStateRewriterImpl.rewriteOnce(SymbStateRewriterImpl.scala:336)
+	at at.forsyte.apalache.tla.bmcmt.SymbStateRewriterImpl.doRecursive$1(SymbStateRewriterImpl.scala:390)
+	at at.forsyte.apalache.tla.bmcmt.SymbStateRewriterImpl.rewriteUntilDone(SymbStateRewriterImpl.scala:424)
+	at at.forsyte.apalache.tla.bmcmt.SymbStateRewriterImpl.eachExpr$1(SymbStateRewriterImpl.scala:447)
+	at at.forsyte.apalache.tla.bmcmt.SymbStateRewriterImpl.$anonfun$rewriteSeqUntilDone$1(SymbStateRewriterImpl.scala:453)
+	at scala.collection.immutable.List.map(List.scala:236)
+	at scala.collection.immutable.List.map(List.scala:79)
+	at at.forsyte.apalache.tla.bmcmt.SymbStateRewriterImpl.rewriteSeqUntilDone(SymbStateRewriterImpl.scala:453)
+	at at.forsyte.apalache.tla.bmcmt.rules.aux.MapBase.rewriteSetMapManyArgs(MapBase.scala:38)
+	at at.forsyte.apalache.tla.bmcmt.rules.SetMapRule.apply(SetMapRule.scala:29)
+	at at.forsyte.apalache.tla.bmcmt.SymbStateRewriterImpl.rewriteOnce(SymbStateRewriterImpl.scala:357)
+	at at.forsyte.apalache.tla.bmcmt.SymbStateRewriterImpl.doRecursive$1(SymbStateRewriterImpl.scala:390)
+	at at.forsyte.apalache.tla.bmcmt.SymbStateRewriterImpl.rewriteUntilDone(SymbStateRewriterImpl.scala:424)
+	at at.forsyte.apalache.tla.bmcmt.SymbStateRewriterImpl.eachExpr$1(SymbStateRewriterImpl.scala:447)
+	at at.forsyte.apalache.tla.bmcmt.SymbStateRewriterImpl.$anonfun$rewriteSeqUntilDone$1(SymbStateRewriterImpl.scala:453)
+	at scala.collection.immutable.List.map(List.scala:236)
+	at scala.collection.immutable.List.map(List.scala:79)
+	at at.forsyte.apalache.tla.bmcmt.SymbStateRewriterImpl.rewriteSeqUntilDone(SymbStateRewriterImpl.scala:453)
+	at at.forsyte.apalache.tla.bmcmt.rules.aux.MapBase.rewriteSetMapManyArgs(MapBase.scala:38)
+	at at.forsyte.apalache.tla.bmcmt.rules.SetMapRule.apply(SetMapRule.scala:29)
+	at at.forsyte.apalache.tla.bmcmt.SymbStateRewriterImpl.rewriteOnce(SymbStateRewriterImpl.scala:357)
+	at at.forsyte.apalache.tla.bmcmt.SymbStateRewriterImpl.doRecursive$1(SymbStateRewriterImpl.scala:390)
+	at at.forsyte.apalache.tla.bmcmt.SymbStateRewriterImpl.rewriteUntilDone(SymbStateRewriterImpl.scala:424)
+	at at.forsyte.apalache.tla.bmcmt.rules.SetCupRule.apply(SetCupRule.scala:32)
+	at at.forsyte.apalache.tla.bmcmt.SymbStateRewriterImpl.rewriteOnce(SymbStateRewriterImpl.scala:357)
+	at at.forsyte.apalache.tla.bmcmt.SymbStateRewriterImpl.doRecursive$1(SymbStateRewriterImpl.scala:390)
+	at at.forsyte.apalache.tla.bmcmt.SymbStateRewriterImpl.rewriteUntilDone(SymbStateRewriterImpl.scala:424)
+	at at.forsyte.apalache.tla.bmcmt.rules.SetCupRule.apply(SetCupRule.scala:30)
+	at at.forsyte.apalache.tla.bmcmt.SymbStateRewriterImpl.rewriteOnce(SymbStateRewriterImpl.scala:357)
+	at at.forsyte.apalache.tla.bmcmt.SymbStateRewriterImpl.doRecursive$1(SymbStateRewriterImpl.scala:390)
+	at at.forsyte.apalache.tla.bmcmt.SymbStateRewriterImpl.rewriteUntilDone(SymbStateRewriterImpl.scala:424)
+	at at.forsyte.apalache.tla.bmcmt.rules.QuantRule.apply(QuantRule.scala:46)
+	at at.forsyte.apalache.tla.bmcmt.SymbStateRewriterImpl.rewriteOnce(SymbStateRewriterImpl.scala:357)
+	at at.forsyte.apalache.tla.bmcmt.SymbStateRewriterImpl.doRecursive$1(SymbStateRewriterImpl.scala:390)
+	at at.forsyte.apalache.tla.bmcmt.SymbStateRewriterImpl.rewriteUntilDone(SymbStateRewriterImpl.scala:424)
+	at at.forsyte.apalache.tla.bmcmt.trex.TransitionExecutorImpl.prepareTransition(TransitionExecutorImpl.scala:107)
+	at at.forsyte.apalache.tla.bmcmt.trex.FilteredTransitionExecutor.prepareTransition(FilteredTransitionExecutor.scala:48)
+	at at.forsyte.apalache.tla.bmcmt.trex.ConstrainedTransitionExecutor.prepareTransition(ConstrainedTransitionExecutor.scala:98)
+	at at.forsyte.apalache.tla.bmcmt.SeqModelChecker.$anonfun$prepareTransitionsAndCheckInvariants$5(SeqModelChecker.scala:219)
+	at scala.runtime.java8.JFunction1$mcVI$sp.apply(JFunction1$mcVI$sp.scala:18)
+	at scala.collection.immutable.Range.foreach(Range.scala:256)
+	at at.forsyte.apalache.tla.bmcmt.SeqModelChecker.prepareTransitionsAndCheckInvariants(SeqModelChecker.scala:213)
+	at at.forsyte.apalache.tla.bmcmt.SeqModelChecker.makeStep(SeqModelChecker.scala:125)
+	at at.forsyte.apalache.tla.bmcmt.SeqModelChecker.run(SeqModelChecker.scala:67)
+	at at.forsyte.apalache.tla.bmcmt.passes.BoundedCheckerPassImpl.runIncrementalChecker(BoundedCheckerPassImpl.scala:175)
+	at at.forsyte.apalache.tla.bmcmt.passes.BoundedCheckerPassImpl.execute(BoundedCheckerPassImpl.scala:127)
+	at at.forsyte.apalache.infra.passes.PassChainExecutor.exec(PassChainExecutor.scala:71)
+	at at.forsyte.apalache.infra.passes.PassChainExecutor.$anonfun$runPassOnModule$3(PassChainExecutor.scala:60)
+	at scala.util.Either.flatMap(Either.scala:360)
+	at at.forsyte.apalache.infra.passes.PassChainExecutor.$anonfun$runPassOnModule$1(PassChainExecutor.scala:58)
+	at scala.collection.LinearSeqOps.foldLeft(LinearSeq.scala:183)
+	at scala.collection.LinearSeqOps.foldLeft$(LinearSeq.scala:179)
+	at scala.collection.immutable.List.foldLeft(List.scala:79)
+	at at.forsyte.apalache.infra.passes.PassChainExecutor.runOnPasses(PassChainExecutor.scala:51)
+	at at.forsyte.apalache.infra.passes.PassChainExecutor.run(PassChainExecutor.scala:42)
+	at at.forsyte.apalache.tla.tooling.opt.CheckCmd.run(CheckCmd.scala:146)
+	at at.forsyte.apalache.tla.Tool$.runCommand(Tool.scala:139)
+	at at.forsyte.apalache.tla.Tool$.run(Tool.scala:119)
+	at at.forsyte.apalache.tla.Tool$.main(Tool.scala:40)
+	at at.forsyte.apalache.tla.Tool.main(Tool.scala)
+2026-07-10T10:23:59,301 [main] ERROR a.f.a.t.Tool$ - Input error (see the manual): SubstRule: Variable PromiseIds is not assigned a value
+2026-07-10T10:23:59,301 [main] INFO  a.f.a.t.Tool$ - It took me 0 days  0 hours  0 min  6 sec
+2026-07-10T10:23:59,302 [main] INFO  a.f.a.t.Tool$ - Total time: 6.915 sec

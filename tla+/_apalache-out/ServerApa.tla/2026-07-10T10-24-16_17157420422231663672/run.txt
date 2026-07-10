@@ -1,0 +1,1 @@
+ check --length=4 --cinit=CInit --inv=Inv ServerApa.tla

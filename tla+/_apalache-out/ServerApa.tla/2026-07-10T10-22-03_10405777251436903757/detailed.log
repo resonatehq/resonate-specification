@@ -1,0 +1,14 @@
+2026-07-10T10:22:03,265 [main] INFO  a.f.a.t.Tool$ - # APALACHE version: 0.58.3 | build: f4ac7ff
+2026-07-10T10:22:03,281 [main] INFO  a.f.a.t.t.o.TypeCheckCmd - Type checking ServerApa.tla
+2026-07-10T10:22:03,503 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #0: SanyParser
+2026-07-10T10:22:04,126 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #0: SanyParser [OK]
+2026-07-10T10:22:04,129 [main] INFO  a.f.a.i.p.PassChainExecutor - PASS #1: TypeCheckerSnowcat
+2026-07-10T10:22:04,129 [main] INFO  a.f.a.t.p.t.EtcTypeCheckerPassImpl -  > Running Snowcat .::.
+2026-07-10T10:22:04,629 [main] ERROR a.f.a.t.p.t.LoggingTypeCheckerListener - [ServerApa.tla:113:13-113:46]: Cannot apply p to the argument "callbacks" in p["callbacks"].
+2026-07-10T10:22:04,692 [main] ERROR a.f.a.t.p.t.LoggingTypeCheckerListener - [ServerApa.tla:113:15-113:23]: Annotation required. Found 2 matching operator signatures ((Str, a2107) => (Str -> a2107)) or ((Str, a2107) => { callbacks: a2107, a2108 }) for arguments Str and Set(a2102)
+2026-07-10T10:22:04,741 [main] ERROR a.f.a.t.p.t.LoggingTypeCheckerListener - [ServerApa.tla:112:1-113:47]: Error when computing the type of PromiseAddCallback
+2026-07-10T10:22:04,766 [main] INFO  a.f.a.t.p.t.EtcTypeCheckerPassImpl -  > Snowcat asks you to fix the types. Meow.
+2026-07-10T10:22:04,786 [main] DEBUG a.f.a.i.p.PassChainExecutor - PASS #1: TypeCheckerSnowcat [FAIL]
+2026-07-10T10:22:04,786 [main] INFO  a.f.a.t.Tool$ - Type checker [FAILED]
+2026-07-10T10:22:04,786 [main] INFO  a.f.a.t.Tool$ - It took me 0 days  0 hours  0 min  1 sec
+2026-07-10T10:22:04,787 [main] INFO  a.f.a.t.Tool$ - Total time: 1.519 sec
