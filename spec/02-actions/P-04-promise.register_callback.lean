@@ -3,6 +3,10 @@ import «01-objects».«state»
 open ServerModel
 
 def promiseRegisterCallback (req : PromiseRegisterCallbackReq) (now : Nat) : M PromiseRegisterCallbackRes := do
+  -- a promise cannot await itself: a self-callback could never fire (its
+  -- own settlement scrubs it) and would dangle forever on a pending promise
+  if req.awaited == req.awaiter then
+    return { status := 422 }
   match ← getPromise req.awaited with
   | none =>
       return { status := 404 }

@@ -16,6 +16,9 @@ def taskSuspend (req : TaskSuspendReq) (now : Nat) : M TaskSuspendRes := do
       if t.version != req.version then return { status := 409 }
       let mut settled := false
       for action in req.actions do
+        -- a task cannot await its own promise (see promiseRegisterCallback)
+        if action.awaited == req.id then
+          return { status := 422 }
         match ← getPromise action.awaited with
         | none =>
             return { status := 422 }
