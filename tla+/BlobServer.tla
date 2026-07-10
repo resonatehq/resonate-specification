@@ -606,7 +606,11 @@ TaskCreate(req) ==
       p0 == GetPromise(wf.promises, a.id) IN
   /\ ShardSwept(wf, now)
   /\ IF p0 = NULL THEN
-       IF a.timeoutAt > now THEN
+       \* untargeted action: unroutable (mirrors the abstract spec)
+       IF ~TagsHas(a.tags, "resonate:target") THEN
+         /\ res' = [status |-> 422, task |-> NULL, promise |-> NULL, preload |-> <<>>]
+         /\ UNCHANGED <<blobs, markers>>
+       ELSE IF a.timeoutAt > now THEN
          LET p == [id        |-> a.id,
                    state     |-> "pending",
                    param     |-> a.param,

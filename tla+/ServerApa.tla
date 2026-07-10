@@ -457,7 +457,10 @@ PromiseRegisterListener(req) ==
 TaskCreate(req) ==
   LET a == req.action IN
   IF a.id \notin DOMAIN promises THEN
-    IF a.timeoutAt > now THEN
+    IF ~TagsHas(a.tags, "resonate:target") THEN
+      \* untargeted action: unroutable (422; mirrors the existing branch)
+      UNCHANGED serverVars
+    ELSE IF a.timeoutAt > now THEN
       LET p == [id        |-> a.id,
                 state     |-> "pending",
                 param     |-> a.param,
@@ -839,10 +842,8 @@ Inv == InvSettledAt /\ InvPromiseTimeouts /\ InvTaskTimeouts /\ InvTaskHasPromis
 (* The structural invariant catalog from the Dafny abstract spec            *)
 (* (resonate-kafka/abstract/Invariants.dfy), sentinel-typed. Four conjuncts *)
 (* are FALSE without environment assumptions and are excluded (TLC          *)
-(* counterexamples, see Server.tla): PromiseNoTargetHasNoTask,              *)
-(* CallbackNotSelfReferential, SuspendedTaskHasCallback -- and              *)
-(* NonExternalPromiseHasNoTimeout, which DOES hold here because this        *)
-(* module's request space is external-only.                                 *)
+(* counterexamples, see Server.tla): CallbackNotSelfReferential and         *)
+(* SuspendedTaskHasCallback.                                                *)
 (* StructuralInv is proven INDUCTIVE below (IndInit/IndInv) -- the          *)
 (* preservation proof the Dafny file leaves as its substantial TODO,        *)
 (* discharged mechanically for the fixed constants.                         *)
@@ -853,6 +854,10 @@ PromiseHasTarget(p) == TagsGet(p.tags, "resonate:target") # ""
 PromiseWithTargetHasTask ==
   \A id \in DOMAIN promises :
     PromiseHasTarget(promises[id]) => id \in DOMAIN tasks
+
+PromiseNoTargetHasNoTask ==
+  \A id \in DOMAIN promises :
+    ~PromiseHasTarget(promises[id]) => id \notin DOMAIN tasks
 
 TaskHasPromiseC ==
   \A id \in DOMAIN tasks : id \in DOMAIN promises
@@ -944,6 +949,7 @@ RetryTimeoutOnlyForPendingTask ==
 
 StructuralInv ==
   /\ PromiseWithTargetHasTask
+  /\ PromiseNoTargetHasNoTask
   /\ TaskHasPromiseC
   /\ ActivePromiseHasActiveTask
   /\ ActiveTaskHasActivePromise

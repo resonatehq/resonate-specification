@@ -6,6 +6,12 @@ def taskCreate (req : TaskCreateReq) (now : Nat) : M TaskCreateRes := do
   let a := req.action
   match ← getPromise a.id with
   | none =>
+      -- a task exists to drive a TARGETED promise: an untargeted action is
+      -- unroutable (mirrors the existing-promise branch below). This also
+      -- keeps the unconditional setPromiseTimeout equivalent to
+      -- promise.create's external-gated arming.
+      if !(a.tags.has "resonate:target") then
+        return { status := 422 }
       if a.timeoutAt > now then
         let p : PromiseObject :=
           { id := a.id, state := .pending, param := a.param, tags := a.tags,

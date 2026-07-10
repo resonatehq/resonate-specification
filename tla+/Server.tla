@@ -591,7 +591,12 @@ TaskCreate(req) ==
   LET a  == req.action
       p0 == GetPromise(promises, a.id) IN
   IF p0 = NULL THEN
-    IF a.timeoutAt > now THEN
+    \* a task exists to drive a TARGETED promise: an untargeted action is
+    \* unroutable (mirrors the existing-promise branch below)
+    IF ~TagsHas(a.tags, "resonate:target") THEN
+      /\ res' = [status |-> 422, task |-> NULL, promise |-> NULL, preload |-> <<>>]
+      /\ UNCHANGED serverVars
+    ELSE IF a.timeoutAt > now THEN
       LET p == [id        |-> a.id,
                 state     |-> "pending",
                 param     |-> a.param,
@@ -1182,7 +1187,6 @@ FulfilledTaskHasSettledPromise ==
     tasks[id].state = "fulfilled"
       => id \in DOMAIN promises /\ promises[id].state # "pending"
 
-\* FAILS: task.create creates the task regardless of target (Lean T-02).
 PromiseNoTargetHasNoTask ==
   \A id \in DOMAIN promises :
     ~PromiseHasTarget(promises[id]) => id \notin DOMAIN tasks
@@ -1194,9 +1198,6 @@ PendingExternalPromiseHasTimeout ==
     (promises[id].state = "pending" /\ PromiseExternal(promises[id]))
       => id \in DOMAIN promiseTimeouts
 
-\* FAILS in the full request space: task.create arms unconditionally
-\* (Lean T-02), so an untagged promise created through it carries a
-\* timeout. Holds under external-only requests.
 NonExternalPromiseHasNoTimeout ==
   \A id \in DOMAIN promiseTimeouts :
     id \in DOMAIN promises => PromiseExternal(promises[id])
