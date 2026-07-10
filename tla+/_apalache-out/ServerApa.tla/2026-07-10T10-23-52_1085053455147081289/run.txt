@@ -1,1 +1,0 @@
- check --length=4 --inv=Inv ServerApa.tla

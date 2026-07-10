@@ -724,9 +724,11 @@ TTLs == {2}
 Values == {EmptyValue}
             \union {[headers |-> <<>>, data |-> d] : d \in DataValues}
 
+\* The full request space, untagged (internal) promises included --
+\* NonExternalPromiseHasNoTimeout is only meaningful with them present.
 \* @type: Set($tags);
 TagOptions ==
-  {<<<<"resonate:timer", "true">>>>}
+  {<<>>, <<<<"resonate:timer", "true">>>>}
     \union {<<<<"resonate:target", a>>>> : a \in Addresses}
     \union {<<<<"resonate:target", a>>, <<"resonate:delay", "2">>>> :
               a \in Addresses}

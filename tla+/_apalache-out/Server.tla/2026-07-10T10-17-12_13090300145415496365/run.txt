@@ -1,1 +1,0 @@
- typecheck Server.tla
