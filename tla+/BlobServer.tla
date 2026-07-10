@@ -1201,6 +1201,14 @@ ShardIntegrity ==
 Constraint == \A o \in Origins : \A id \in DOMAIN blobs[o].tasks :
                 blobs[o].tasks[id].version <= 3
 
+(* State identity for TLC (cfg: VIEW View): the last response is an         *)
+(* observation of a step, not state -- no handler reads `res`, so           *)
+(* successors and the per-transition refinement check (which constrains     *)
+(* res') are independent of it. A transition collapsed by the view differs  *)
+(* from its explored representative only in the pre-state's response,       *)
+(* which no action and no non-stuttering branch of the property reads.      *)
+View == <<blobs, markers, now>>
+
 -----------------------------------------------------------------------------
 (* THE REFINEMENT:  BlobServer  =>  Server.                                 *)
 (*                                                                          *)

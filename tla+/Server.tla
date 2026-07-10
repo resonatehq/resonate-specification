@@ -1133,4 +1133,11 @@ Spec == Init /\ [][Next]_vars
 
 Constraint == \A id \in DOMAIN tasks : tasks[id].version <= 3
 
+(* State identity for TLC (cfg: VIEW View): the last response is an         *)
+(* observation of a step, not state -- no handler reads `res`, so           *)
+(* successors and per-transition checks are independent of it. Excluding    *)
+(* it from the fingerprint collapses states that differ only in what was    *)
+(* last answered.                                                           *)
+View == <<promises, tasks, promiseTimeouts, taskTimeouts, outbox, now>>
+
 =============================================================================
