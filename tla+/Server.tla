@@ -1140,4 +1140,146 @@ Constraint == \A id \in DOMAIN tasks : tasks[id].version <= 3
 (* last answered.                                                           *)
 View == <<promises, tasks, promiseTimeouts, taskTimeouts, outbox, now>>
 
+-----------------------------------------------------------------------------
+(* The structural invariant catalog from the Dafny abstract spec            *)
+(* (resonate-kafka/abstract/Invariants.dfy), ported predicate-for-          *)
+(* predicate. Unbounded Dafny quantifiers are bounded by the map domains.   *)
+(* Check with ServerInv.cfg; the verdicts (which hold, which need an        *)
+(* environment assumption) are recorded next to each predicate.             *)
+
+PromiseHasTarget(p) == TagsHas(p.tags, "resonate:target")
+
+WFState ==
+  /\ \A id \in DOMAIN promises : promises[id].id = id
+  /\ \A id \in DOMAIN tasks : tasks[id].id = id
+
+\* Section 1 -- Promise-Task Coupling
+
+PromiseWithTargetHasTask ==
+  \A id \in DOMAIN promises :
+    PromiseHasTarget(promises[id]) => id \in DOMAIN tasks
+
+TaskHasPromise ==
+  \A id \in DOMAIN tasks : id \in DOMAIN promises
+
+ActivePromiseHasActiveTask ==
+  \A id \in DOMAIN promises :
+    (promises[id].state = "pending" /\ PromiseHasTarget(promises[id]))
+      => id \in DOMAIN tasks /\ tasks[id].state # "fulfilled"
+
+ActiveTaskHasActivePromise ==
+  \A id \in DOMAIN tasks :
+    tasks[id].state # "fulfilled"
+      => id \in DOMAIN promises /\ promises[id].state = "pending"
+
+SettledPromiseHasFulfilledTask ==
+  \A id \in DOMAIN promises :
+    (promises[id].state # "pending" /\ PromiseHasTarget(promises[id]))
+      => id \in DOMAIN tasks /\ tasks[id].state = "fulfilled"
+
+FulfilledTaskHasSettledPromise ==
+  \A id \in DOMAIN tasks :
+    tasks[id].state = "fulfilled"
+      => id \in DOMAIN promises /\ promises[id].state # "pending"
+
+\* FAILS: task.create creates the task regardless of target (Lean T-02).
+PromiseNoTargetHasNoTask ==
+  \A id \in DOMAIN promises :
+    ~PromiseHasTarget(promises[id]) => id \notin DOMAIN tasks
+
+\* Section 2 -- Promise Structure
+
+PendingExternalPromiseHasTimeout ==
+  \A id \in DOMAIN promises :
+    (promises[id].state = "pending" /\ PromiseExternal(promises[id]))
+      => id \in DOMAIN promiseTimeouts
+
+\* FAILS in the full request space: task.create arms unconditionally
+\* (Lean T-02), so an untagged promise created through it carries a
+\* timeout. Holds under external-only requests.
+NonExternalPromiseHasNoTimeout ==
+  \A id \in DOMAIN promiseTimeouts :
+    id \in DOMAIN promises => PromiseExternal(promises[id])
+
+PTimeoutsSubsetPromises == DOMAIN promiseTimeouts \subseteq DOMAIN promises
+
+SettledPromiseHasNoTimeout ==
+  \A id \in DOMAIN promises :
+    promises[id].state # "pending" => id \notin DOMAIN promiseTimeouts
+
+SettledPromiseHasNoCallbacks ==
+  \A id \in DOMAIN promises :
+    promises[id].state # "pending" => promises[id].callbacks = {}
+
+\* FAILS: nothing forbids awaited = awaiter (register_callback), or a task
+\* suspending on its own promise. An environment assumption in the sim.
+CallbackNotSelfReferential ==
+  \A id \in DOMAIN promises : id \notin promises[id].callbacks
+
+CallbackAwaiterHasTask ==
+  \A id \in DOMAIN promises : \A aw \in promises[id].callbacks :
+    aw \in DOMAIN tasks
+
+CallbackAwaiterIsPending ==
+  \A id \in DOMAIN promises : \A aw \in promises[id].callbacks :
+    aw \in DOMAIN promises /\ promises[aw].state = "pending"
+
+\* Section 5 -- Task Structure
+
+NonAcquiredTaskNoPidOrTtl ==
+  \A id \in DOMAIN tasks :
+    tasks[id].state # "acquired"
+      => tasks[id].pid = NULL /\ tasks[id].ttl = NULL
+
+\* FAILS: a suspend with an empty actions list (Lean T-06 allows it) parks
+\* the task without registering anything. An environment assumption.
+SuspendedTaskHasCallback ==
+  \A id \in DOMAIN tasks :
+    tasks[id].state = "suspended"
+      => \E pid \in DOMAIN promises : id \in promises[pid].callbacks
+
+FulfilledTaskHasEmptyResumes ==
+  \A id \in DOMAIN tasks :
+    tasks[id].state = "fulfilled" => tasks[id].resumes = {}
+
+\* Section 7 -- Task Timeouts
+
+PendingTaskHasRetryTimeout ==
+  \A id \in DOMAIN tasks :
+    tasks[id].state = "pending" => <<id, 0>> \in DOMAIN taskTimeouts
+
+AcquiredTaskHasLeaseTimeout ==
+  \A id \in DOMAIN tasks :
+    tasks[id].state = "acquired" => <<id, 1>> \in DOMAIN taskTimeouts
+
+LeaseTimeoutHasValidPidAndTtl ==
+  \A k \in DOMAIN taskTimeouts :
+    k[2] = 1 => /\ k[1] \in DOMAIN tasks
+                /\ tasks[k[1]].state = "acquired"
+                /\ tasks[k[1]].pid # NULL
+                /\ tasks[k[1]].ttl # NULL
+
+TaskHasAtMostOneTimeout ==
+  \A k \in DOMAIN taskTimeouts : <<k[1], 1 - k[2]>> \notin DOMAIN taskTimeouts
+
+SuspendedTaskHasNoTimeout ==
+  \A k \in DOMAIN taskTimeouts :
+    k[1] \in DOMAIN tasks => tasks[k[1]].state # "suspended"
+
+HaltedTaskHasNoTimeout ==
+  \A k \in DOMAIN taskTimeouts :
+    k[1] \in DOMAIN tasks => tasks[k[1]].state # "halted"
+
+FulfilledTaskHasNoTimeout ==
+  \A k \in DOMAIN taskTimeouts :
+    k[1] \in DOMAIN tasks => tasks[k[1]].state # "fulfilled"
+
+LeaseTimeoutOnlyForAcquiredTask ==
+  \A k \in DOMAIN taskTimeouts :
+    k[2] = 1 => k[1] \in DOMAIN tasks /\ tasks[k[1]].state = "acquired"
+
+RetryTimeoutOnlyForPendingTask ==
+  \A k \in DOMAIN taskTimeouts :
+    k[2] = 0 => k[1] \in DOMAIN tasks /\ tasks[k[1]].state = "pending"
+
 =============================================================================

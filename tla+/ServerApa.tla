@@ -836,6 +836,136 @@ InvTaskHasPromise ==
 Inv == InvSettledAt /\ InvPromiseTimeouts /\ InvTaskTimeouts /\ InvTaskHasPromise
 
 -----------------------------------------------------------------------------
+(* The structural invariant catalog from the Dafny abstract spec            *)
+(* (resonate-kafka/abstract/Invariants.dfy), sentinel-typed. Four conjuncts *)
+(* are FALSE without environment assumptions and are excluded (TLC          *)
+(* counterexamples, see Server.tla): PromiseNoTargetHasNoTask,              *)
+(* CallbackNotSelfReferential, SuspendedTaskHasCallback -- and              *)
+(* NonExternalPromiseHasNoTimeout, which DOES hold here because this        *)
+(* module's request space is external-only.                                 *)
+(* StructuralInv is proven INDUCTIVE below (IndInit/IndInv) -- the          *)
+(* preservation proof the Dafny file leaves as its substantial TODO,        *)
+(* discharged mechanically for the fixed constants.                         *)
+
+\* @type: $promise => Bool;
+PromiseHasTarget(p) == TagsGet(p.tags, "resonate:target") # ""
+
+PromiseWithTargetHasTask ==
+  \A id \in DOMAIN promises :
+    PromiseHasTarget(promises[id]) => id \in DOMAIN tasks
+
+TaskHasPromiseC ==
+  \A id \in DOMAIN tasks : id \in DOMAIN promises
+
+ActivePromiseHasActiveTask ==
+  \A id \in DOMAIN promises :
+    (promises[id].state = "pending" /\ PromiseHasTarget(promises[id]))
+      => id \in DOMAIN tasks /\ tasks[id].state # "fulfilled"
+
+ActiveTaskHasActivePromise ==
+  \A id \in DOMAIN tasks :
+    tasks[id].state # "fulfilled"
+      => id \in DOMAIN promises /\ promises[id].state = "pending"
+
+SettledPromiseHasFulfilledTask ==
+  \A id \in DOMAIN promises :
+    (promises[id].state # "pending" /\ PromiseHasTarget(promises[id]))
+      => id \in DOMAIN tasks /\ tasks[id].state = "fulfilled"
+
+FulfilledTaskHasSettledPromise ==
+  \A id \in DOMAIN tasks :
+    tasks[id].state = "fulfilled"
+      => id \in DOMAIN promises /\ promises[id].state # "pending"
+
+PendingExternalPromiseHasTimeout ==
+  \A id \in DOMAIN promises :
+    (promises[id].state = "pending" /\ PromiseExternal(promises[id]))
+      => id \in DOMAIN promiseTimeouts
+
+NonExternalPromiseHasNoTimeout ==
+  \A id \in DOMAIN promiseTimeouts :
+    id \in DOMAIN promises => PromiseExternal(promises[id])
+
+PTimeoutsSubsetPromises == DOMAIN promiseTimeouts \subseteq DOMAIN promises
+
+SettledPromiseHasNoTimeout ==
+  \A id \in DOMAIN promises :
+    promises[id].state # "pending" => id \notin DOMAIN promiseTimeouts
+
+SettledPromiseHasNoCallbacks ==
+  \A id \in DOMAIN promises :
+    promises[id].state # "pending" => promises[id].callbacks = {}
+
+CallbackAwaiterHasTask ==
+  \A id \in DOMAIN promises : \A aw \in promises[id].callbacks :
+    aw \in DOMAIN tasks
+
+CallbackAwaiterIsPending ==
+  \A id \in DOMAIN promises : \A aw \in promises[id].callbacks :
+    aw \in DOMAIN promises /\ promises[aw].state = "pending"
+
+NonAcquiredTaskNoPidOrTtl ==
+  \A id \in DOMAIN tasks :
+    tasks[id].state # "acquired"
+      => tasks[id].pid = "" /\ tasks[id].ttl = -1
+
+FulfilledTaskHasEmptyResumes ==
+  \A id \in DOMAIN tasks :
+    tasks[id].state = "fulfilled" => tasks[id].resumes = {}
+
+PendingTaskHasRetryTimeout ==
+  \A id \in DOMAIN tasks :
+    tasks[id].state = "pending" => <<id, 0>> \in DOMAIN taskTimeouts
+
+AcquiredTaskHasLeaseTimeout ==
+  \A id \in DOMAIN tasks :
+    tasks[id].state = "acquired" => <<id, 1>> \in DOMAIN taskTimeouts
+
+LeaseTimeoutHasValidPidAndTtl ==
+  \A k \in DOMAIN taskTimeouts :
+    k[2] = 1 => /\ k[1] \in DOMAIN tasks
+                /\ tasks[k[1]].state = "acquired"
+                /\ tasks[k[1]].pid # ""
+                /\ tasks[k[1]].ttl # -1
+
+TaskHasAtMostOneTimeout ==
+  \A k \in DOMAIN taskTimeouts : <<k[1], 1 - k[2]>> \notin DOMAIN taskTimeouts
+
+LeaseTimeoutOnlyForAcquiredTask ==
+  \A k \in DOMAIN taskTimeouts :
+    k[2] = 1 => k[1] \in DOMAIN tasks /\ tasks[k[1]].state = "acquired"
+
+RetryTimeoutOnlyForPendingTask ==
+  \A k \in DOMAIN taskTimeouts :
+    k[2] = 0 => k[1] \in DOMAIN tasks /\ tasks[k[1]].state = "pending"
+
+\* Suspended/Halted/FulfilledTaskHasNoTimeout follow from the two "only
+\* for" predicates plus TaskHasAtMostOneTimeout; WFState is in IndTypeOk.
+
+StructuralInv ==
+  /\ PromiseWithTargetHasTask
+  /\ TaskHasPromiseC
+  /\ ActivePromiseHasActiveTask
+  /\ ActiveTaskHasActivePromise
+  /\ SettledPromiseHasFulfilledTask
+  /\ FulfilledTaskHasSettledPromise
+  /\ PendingExternalPromiseHasTimeout
+  /\ NonExternalPromiseHasNoTimeout
+  /\ PTimeoutsSubsetPromises
+  /\ SettledPromiseHasNoTimeout
+  /\ SettledPromiseHasNoCallbacks
+  /\ CallbackAwaiterHasTask
+  /\ CallbackAwaiterIsPending
+  /\ NonAcquiredTaskNoPidOrTtl
+  /\ FulfilledTaskHasEmptyResumes
+  /\ PendingTaskHasRetryTimeout
+  /\ AcquiredTaskHasLeaseTimeout
+  /\ LeaseTimeoutHasValidPidAndTtl
+  /\ TaskHasAtMostOneTimeout
+  /\ LeaseTimeoutOnlyForAcquiredTask
+  /\ RetryTimeoutOnlyForPendingTask
+
+-----------------------------------------------------------------------------
 (* Induction: IndInv is closed under Next from ANY state satisfying it      *)
 (* (--init=IndInit --inv=IndInv --length=1) and holds initially             *)
 (* (--init=Init --inv=IndInv --length=0), hence at EVERY depth -- an        *)
@@ -854,6 +984,7 @@ IndTypeOk ==
        /\ promises[id].id = id
        /\ promises[id].state \in PromiseStates
        /\ promises[id].timeoutAt >= 0
+       /\ promises[id].tags \in TagOptions
        /\ promises[id].callbacks \subseteq PromiseIds
        /\ promises[id].listeners \subseteq Addresses
   /\ DOMAIN tasks \subseteq PromiseIds
@@ -863,7 +994,7 @@ IndTypeOk ==
   /\ DOMAIN promiseTimeouts \subseteq PromiseIds
   /\ \A k \in DOMAIN taskTimeouts : k[1] \in PromiseIds /\ k[2] \in {0, 1}
 
-IndInv == IndTypeOk /\ Inv
+IndInv == IndTypeOk /\ Inv /\ StructuralInv
 
 \* An arbitrary IndInv state (Gen bounds the collection sizes to the
 \* constants' capacity). The outbox is write-only -- no transition reads
