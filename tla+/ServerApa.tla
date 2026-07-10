@@ -584,7 +584,8 @@ TaskHeartbeat(req) ==
 \* T-06 task.suspend
 \* @type: { id: Str, version: Int, actions: Seq({ awaited: Str, awaiter: Str }) } => Bool;
 TaskSuspend(req) ==
-  IF ~(/\ req.id \in DOMAIN tasks
+  IF ~(/\ req.actions # <<>>
+       /\ req.id \in DOMAIN tasks
        /\ req.id \in DOMAIN promises
        /\ tasks[req.id].state = "acquired"
        /\ promises[req.id].state = "pending"
@@ -846,9 +847,10 @@ Inv == InvSettledAt /\ InvPromiseTimeouts /\ InvTaskTimeouts /\ InvTaskHasPromis
 
 -----------------------------------------------------------------------------
 (* The structural invariant catalog from the Dafny abstract spec            *)
-(* (resonate-kafka/abstract/Invariants.dfy), sentinel-typed. Four conjuncts *)
-(* is FALSE without an environment assumption and is excluded (TLC          *)
-(* counterexample, see Server.tla): SuspendedTaskHasCallback.               *)
+(* (resonate-kafka/abstract/Invariants.dfy), sentinel-typed -- the COMPLETE *)
+(* set: the conjuncts once falsified are theorems since task.create        *)
+(* requires a target, self-await is forbidden, and an empty suspend is      *)
+(* rejected.                                                                *)
 (* StructuralInv is proven INDUCTIVE below (IndInit/IndInv) -- the          *)
 (* preservation proof the Dafny file leaves as its substantial TODO,        *)
 (* discharged mechanically for the fixed constants.                         *)
@@ -922,6 +924,11 @@ NonAcquiredTaskNoPidOrTtl ==
     tasks[id].state # "acquired"
       => tasks[id].pid = "" /\ tasks[id].ttl = -1
 
+SuspendedTaskHasCallback ==
+  \A id \in DOMAIN tasks :
+    tasks[id].state = "suspended"
+      => \E pid \in DOMAIN promises : id \in promises[pid].callbacks
+
 FulfilledTaskHasEmptyResumes ==
   \A id \in DOMAIN tasks :
     tasks[id].state = "fulfilled" => tasks[id].resumes = {}
@@ -972,6 +979,7 @@ StructuralInv ==
   /\ CallbackAwaiterHasTask
   /\ CallbackAwaiterIsPending
   /\ NonAcquiredTaskNoPidOrTtl
+  /\ SuspendedTaskHasCallback
   /\ FulfilledTaskHasEmptyResumes
   /\ PendingTaskHasRetryTimeout
   /\ AcquiredTaskHasLeaseTimeout

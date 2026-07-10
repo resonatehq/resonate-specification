@@ -766,6 +766,11 @@ TaskHeartbeat(req) ==
 (* 02-actions/T-06-task.suspend.lean                                        *)
 
 TaskSuspend(req) ==
+  \* suspending on nothing would park the task forever (422)
+  IF req.actions = <<>> THEN
+    /\ res' = [status |-> 422, preload |-> <<>>]
+    /\ UNCHANGED serverVars
+  ELSE
   LET t0 == GetTask(tasks, req.id) IN
   IF t0 = NULL THEN
     /\ res' = [status |-> 404, preload |-> <<>>]
@@ -1239,8 +1244,6 @@ NonAcquiredTaskNoPidOrTtl ==
     tasks[id].state # "acquired"
       => tasks[id].pid = NULL /\ tasks[id].ttl = NULL
 
-\* FAILS: a suspend with an empty actions list (Lean T-06 allows it) parks
-\* the task without registering anything. An environment assumption.
 SuspendedTaskHasCallback ==
   \A id \in DOMAIN tasks :
     tasks[id].state = "suspended"

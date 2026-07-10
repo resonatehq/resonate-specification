@@ -796,7 +796,12 @@ TaskSuspend(req) ==
       wf == blobs[origin]
       t0 == GetTask(wf.tasks, req.id) IN
   /\ ShardSwept(wf, now)
-  /\ IF t0 = NULL THEN
+  /\ IF req.actions = <<>> THEN
+       \* suspending on nothing would park the task forever (mirrors the
+       \* abstract spec)
+       /\ res' = [status |-> 422, preload |-> <<>>]
+       /\ UNCHANGED <<blobs, markers>>
+     ELSE IF t0 = NULL THEN
        /\ res' = [status |-> 404, preload |-> <<>>]
        /\ UNCHANGED <<blobs, markers>>
      ELSE
