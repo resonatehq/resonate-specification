@@ -509,7 +509,11 @@ PromiseRegisterCallback(req) ==
       wf == blobs[origin]
       pAwaited == GetPromise(wf.promises, req.awaited) IN
   /\ ShardSwept(wf, now)
-  /\ IF pAwaited = NULL THEN
+  /\ IF req.awaited = req.awaiter THEN
+       \* a promise cannot await itself (mirrors the abstract spec)
+       /\ res' = [status |-> 422, promise |-> NULL]
+       /\ UNCHANGED <<blobs, markers>>
+     ELSE IF pAwaited = NULL THEN
        /\ res' = [status |-> 404, promise |-> NULL]
        /\ UNCHANGED <<blobs, markers>>
      ELSE
@@ -808,6 +812,10 @@ TaskSuspend(req) ==
        /\ UNCHANGED <<blobs, markers>>
      ELSE IF t0.version # req.version THEN
        /\ res' = [status |-> 409, preload |-> <<>>]
+       /\ UNCHANGED <<blobs, markers>>
+     ELSE IF \E i \in DOMAIN req.actions : req.actions[i].awaited = req.id THEN
+       \* a task cannot await its own promise (mirrors the abstract spec)
+       /\ res' = [status |-> 422, preload |-> <<>>]
        /\ UNCHANGED <<blobs, markers>>
      ELSE IF \E i \in DOMAIN req.actions :
                GetPromise(wf.promises, req.actions[i].awaited) = NULL THEN

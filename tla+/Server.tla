@@ -500,6 +500,11 @@ PromiseSettle(req, Wrap(_)) ==
 (* 02-actions/P-04-promise.register_callback.lean                           *)
 
 PromiseRegisterCallback(req) ==
+  \* a promise cannot await itself (422)
+  IF req.awaited = req.awaiter THEN
+    /\ res' = [status |-> 422, promise |-> NULL]
+    /\ UNCHANGED serverVars
+  ELSE
   LET pAwaited == GetPromise(promises, req.awaited) IN
   IF pAwaited = NULL THEN
     /\ res' = [status |-> 404, promise |-> NULL]
@@ -778,6 +783,10 @@ TaskSuspend(req) ==
     /\ UNCHANGED serverVars
   ELSE IF t0.version # req.version THEN
     /\ res' = [status |-> 409, preload |-> <<>>]
+    /\ UNCHANGED serverVars
+  ELSE IF \E i \in DOMAIN req.actions : req.actions[i].awaited = req.id THEN
+    \* a task cannot await its own promise (422)
+    /\ res' = [status |-> 422, preload |-> <<>>]
     /\ UNCHANGED serverVars
   ELSE IF \E i \in DOMAIN req.actions :
             GetPromise(promises, req.actions[i].awaited) = NULL THEN
@@ -1212,8 +1221,6 @@ SettledPromiseHasNoCallbacks ==
   \A id \in DOMAIN promises :
     promises[id].state # "pending" => promises[id].callbacks = {}
 
-\* FAILS: nothing forbids awaited = awaiter (register_callback), or a task
-\* suspending on its own promise. An environment assumption in the sim.
 CallbackNotSelfReferential ==
   \A id \in DOMAIN promises : id \notin promises[id].callbacks
 

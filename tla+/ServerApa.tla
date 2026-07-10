@@ -422,7 +422,10 @@ PromiseSettle(req) ==
 \* P-04 promise.register_callback
 \* @type: { awaited: Str, awaiter: Str } => Bool;
 PromiseRegisterCallback(req) ==
-  IF req.awaited \notin DOMAIN promises THEN
+  IF req.awaited = req.awaiter THEN
+    \* a promise cannot await itself (422)
+    UNCHANGED serverVars
+  ELSE IF req.awaited \notin DOMAIN promises THEN
     UNCHANGED serverVars
   ELSE IF req.awaiter \notin DOMAIN promises THEN
     UNCHANGED serverVars
@@ -587,6 +590,7 @@ TaskSuspend(req) ==
        /\ promises[req.id].state = "pending"
        /\ promises[req.id].timeoutAt > now
        /\ tasks[req.id].version = req.version
+       /\ \A i \in DOMAIN req.actions : req.actions[i].awaited # req.id
        /\ \A i \in DOMAIN req.actions : req.actions[i].awaited \in DOMAIN promises)
   THEN
     UNCHANGED serverVars
@@ -843,9 +847,8 @@ Inv == InvSettledAt /\ InvPromiseTimeouts /\ InvTaskTimeouts /\ InvTaskHasPromis
 -----------------------------------------------------------------------------
 (* The structural invariant catalog from the Dafny abstract spec            *)
 (* (resonate-kafka/abstract/Invariants.dfy), sentinel-typed. Four conjuncts *)
-(* are FALSE without environment assumptions and are excluded (TLC          *)
-(* counterexamples, see Server.tla): CallbackNotSelfReferential and         *)
-(* SuspendedTaskHasCallback.                                                *)
+(* is FALSE without an environment assumption and is excluded (TLC          *)
+(* counterexample, see Server.tla): SuspendedTaskHasCallback.               *)
 (* StructuralInv is proven INDUCTIVE below (IndInit/IndInv) -- the          *)
 (* preservation proof the Dafny file leaves as its substantial TODO,        *)
 (* discharged mechanically for the fixed constants.                         *)
@@ -902,6 +905,9 @@ SettledPromiseHasNoTimeout ==
 SettledPromiseHasNoCallbacks ==
   \A id \in DOMAIN promises :
     promises[id].state # "pending" => promises[id].callbacks = {}
+
+CallbackNotSelfReferential ==
+  \A id \in DOMAIN promises : id \notin promises[id].callbacks
 
 CallbackAwaiterHasTask ==
   \A id \in DOMAIN promises : \A aw \in promises[id].callbacks :
@@ -962,6 +968,7 @@ StructuralInv ==
   /\ PTimeoutsSubsetPromises
   /\ SettledPromiseHasNoTimeout
   /\ SettledPromiseHasNoCallbacks
+  /\ CallbackNotSelfReferential
   /\ CallbackAwaiterHasTask
   /\ CallbackAwaiterIsPending
   /\ NonAcquiredTaskNoPidOrTtl
