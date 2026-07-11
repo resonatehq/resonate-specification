@@ -22,14 +22,16 @@
 (* atomic (contention only retries; blobfun models the ideal single-op     *)
 (* case, as do we). TLA+ refinement is checked step for step, so the       *)
 (* commit is decomposed into micro-steps that are each one abstract step:  *)
-(*   - SweepDueAction fires ONE due timeout entry of one workflow (= the          *)
+(*   - SweepDueAction fires ONE due timeout entry of one workflow (= the    *)
 (*     abstract TickAction at an unchanged clock);                          *)
 (*   - a mutating handler requires its workflow to be SWEPT (no due         *)
 (*     entries) -- the sweep prefix of the real commit has been factored    *)
-(*     into SweepDueAction steps; the remaining Apply is one abstract step.       *)
-(*   - reads (get / search) take no store write: they answer by             *)
-(*     projection (libr8 `projected`), so they need no sweep guard.         *)
-(* A real commit is exactly a SweepDueAction* ; Handler sequence of these         *)
+(*     into SweepDueAction steps; the remaining Apply is one abstract       *)
+(*     step.                                                                 *)
+(*   - RESPONSES ARE OUT OF SCOPE (as in the abstract spec): the checked    *)
+(*     property is state evolution. Reads (get / search) take no store      *)
+(*     write -- pure observations, absent from Next.                        *)
+(* A real commit is exactly a SweepDueAction* ; Handler sequence of these   *)
 (* micro-steps; the model additionally allows other requests to interleave  *)
 (* between them, a superset of behaviors that must (and does) still refine. *)
 (*                                                                          *)
@@ -77,10 +79,9 @@ CONSTANTS Origins,     \* workflow keys: one blob per origin
 VARIABLES blobs,    \* [Origins -> workflow record]: the bucket, one blob per workflow
           markers   \* the timer index: {[deadline, origin]} -- the driver's wake structure
 
-VARIABLES now,      \* the clock; only SweepDueAction/AdvanceClockAction read/move it
-          res       \* the response of the last handler call
+VARIABLE now  \* the clock; only SweepDueAction/AdvanceClockAction move it
 
-vars == <<blobs, markers, now, res>>
+vars == <<blobs, markers, now>>
 
 config == [retryTimeout |-> RetryTimeout]
 
@@ -158,8 +159,7 @@ SendMsg(ob, address, msg) ==
   IN [k \in DOMAIN ob \cup {key} |-> IF k = key THEN entry ELSE ob[k]]
 
 \* The promise a live create stores; the promise an expired create stores
-\* (settled at birth); a settled promise; a pending promise past its
-\* deadline as observed (libr8 `projected`).
+\* (settled at birth); a settled promise.
 PromiseCreated(req) ==
   [id        |-> req.id,
    state     |-> "pending",
@@ -187,11 +187,6 @@ PromiseCreatedExpired(req) ==
 PromiseSettled(p, req) ==
   [p EXCEPT !.state = req.state, !.value = req.value, !.settledAt = now,
             !.callbacks = {}, !.listeners = {}]
-
-Projected(p) ==
-  IF PromiseIsTimer(p)
-  THEN [p EXCEPT !.state = "resolved", !.settledAt = p.timeoutAt]
-  ELSE [p EXCEPT !.state = "rejected_timedout", !.settledAt = p.timeoutAt]
 
 -----------------------------------------------------------------------------
 (* The resume cascade, per variable (libr8 enqueue_resume, sliced exactly   *)
@@ -379,42 +374,13 @@ OnTaskLeaseTimeout(origin, id, tnow) ==
        /\ markers' = ReconcileMarkers(origin, wf, wfNew)
 
 -----------------------------------------------------------------------------
-(* Handlers. Reads answer by projection off the loaded blob (no store       *)
-(* write); mutations require the blob swept, apply, and store (commit +     *)
-(* marker reconciliation). Bodies coincide with the abstract handlers; the  *)
-(* projection branches are dead on swept shards but kept verbatim.          *)
-
-\* P-01 promise.get -- a READ: load, project, no store (libr8 `read`).
-PromiseGet(req) ==
-  LET wf == blobs[OriginOf(req.id)]
-      p == GetPromise(wf.promises, req.id) IN
-  /\ IF p = NULL THEN
-       res' = [status |-> 404, promise |-> NULL]
-     ELSE IF p.state = "pending" THEN
-       IF p.timeoutAt <= now THEN
-         LET projected == Projected(p)
-         IN res' = [status |-> 200, promise |-> PromiseToRecord(projected)]
-       ELSE
-         res' = [status |-> 200, promise |-> PromiseToRecord(p)]
-     ELSE
-       res' = [status |-> 200, promise |-> PromiseToRecord(p)]
-  /\ UNCHANGED <<blobs, markers>>
+(* Handlers. A mutation requires its blob swept, applies, and stores        *)
+(* (commit + marker reconciliation). The pure reads (P-01 promise.get,      *)
+(* P-06/T-11 search, T-01 task.get) answer by projection off the loaded     *)
+(* blob without a store write: observations, not transitions.               *)
 
 \* P-02 promise.create -- applied at an explicit origin so task.fence can
-\* run it against the fence task's workflow (blobfun CreateOnWf). The
-\* action constrains blobs/markers; the RESPONSE is a state function of
-\* the pre-state, embedded by the callers (composition by conjunction).
-PromiseCreateResAt(origin, req) ==
-  LET wf == blobs[origin]
-      p0 == GetPromise(wf.promises, req.id) IN
-  IF p0 = NULL THEN
-    IF req.timeoutAt > now
-    THEN [status |-> 200, promise |-> PromiseToRecord(PromiseCreated(req))]
-    ELSE [status |-> 200, promise |-> PromiseToRecord(PromiseCreatedExpired(req))]
-  ELSE IF p0.state = "pending" /\ p0.timeoutAt <= now
-  THEN [status |-> 200, promise |-> PromiseToRecord(Projected(p0))]
-  ELSE [status |-> 200, promise |-> PromiseToRecord(p0)]
-
+\* run it against the fence task's workflow (blobfun CreateOnWf).
 PromiseCreateAt(origin, req) ==
   LET retryTimeout == config.retryTimeout
       wf == blobs[origin]
@@ -471,18 +437,6 @@ PromiseCreateAt(origin, req) ==
 
 \* P-03 promise.settle (blobfun SettleOnWf + TriggerSettlement; libr8
 \* settle_cascade).
-PromiseSettleResAt(origin, req) ==
-  LET wf == blobs[origin]
-      p0 == GetPromise(wf.promises, req.id) IN
-  IF p0 = NULL THEN
-    [status |-> 404, promise |-> NULL]
-  ELSE IF p0.state = "pending" THEN
-    IF p0.timeoutAt > now
-    THEN [status |-> 200, promise |-> PromiseToRecord(PromiseSettled(p0, req))]
-    ELSE [status |-> 200, promise |-> PromiseToRecord(Projected(p0))]
-  ELSE
-    [status |-> 200, promise |-> PromiseToRecord(p0)]
-
 PromiseSettleAt(origin, req) ==
   LET wf == blobs[origin]
       p0 == GetPromise(wf.promises, req.id) IN
@@ -526,107 +480,57 @@ PromiseSettleAt(origin, req) ==
        UNCHANGED <<blobs, markers>>
 
 \* P-04 promise.register_callback -- same-origin (libr8 validates it; the
-\* awaiter is looked up in the awaited promise's workflow).
+\* awaiter is looked up in the awaited promise's workflow). A promise
+\* cannot await itself (422).
 PromiseRegisterCallback(req) ==
   LET origin == OriginOf(req.awaited)
-      wf == blobs[origin]
-      pAwaited == GetPromise(wf.promises, req.awaited) IN
+      wf == blobs[origin] IN
   /\ ShardSwept(wf, now)
-  /\ IF req.awaited = req.awaiter THEN
-       \* a promise cannot await itself (mirrors the abstract spec)
-       /\ res' = [status |-> 422, promise |-> NULL]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE IF pAwaited = NULL THEN
-       /\ res' = [status |-> 404, promise |-> NULL]
-       /\ UNCHANGED <<blobs, markers>>
+  /\ IF /\ req.awaited # req.awaiter
+        /\ req.awaited \in DOMAIN wf.promises
+        /\ req.awaiter \in DOMAIN wf.promises
+        /\ TagsHas(wf.promises[req.awaiter].tags, "resonate:target")
+        /\ wf.promises[req.awaited].state = "pending"
+        /\ wf.promises[req.awaited].timeoutAt > now
+     THEN
+       LET wfNew == [wf EXCEPT
+                       !.promises = IF wf.promises[req.awaiter].state = "pending"
+                                       /\ wf.promises[req.awaiter].timeoutAt > now
+                                    THEN SetPromise(@, PromiseAddCallback(
+                                             wf.promises[req.awaited], req.awaiter))
+                                    ELSE @]
+       IN /\ blobs' = [blobs EXCEPT ![origin] = wfNew]
+          /\ markers' = ReconcileMarkers(origin, wf, wfNew)
      ELSE
-     LET pAwaiter == GetPromise(wf.promises, req.awaiter) IN
-     IF pAwaiter = NULL THEN
-       /\ res' = [status |-> 422, promise |-> NULL]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE IF ~TagsHas(pAwaiter.tags, "resonate:target") THEN
-       /\ res' = [status |-> 422, promise |-> NULL]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE IF pAwaited.state = "pending" THEN
-       IF pAwaited.timeoutAt > now THEN
-         LET wfNew == [wf EXCEPT
-                         !.promises = IF pAwaiter.state = "pending"
-                                         /\ pAwaiter.timeoutAt > now
-                                      THEN SetPromise(@, PromiseAddCallback(pAwaited,
-                                                                            req.awaiter))
-                                      ELSE @]
-         IN /\ blobs' = [blobs EXCEPT ![origin] = wfNew]
-            /\ markers' = ReconcileMarkers(origin, wf, wfNew)
-            /\ res' = [status |-> 200, promise |-> PromiseToRecord(pAwaited)]
-       ELSE
-         LET projected == Projected(pAwaited)
-         IN /\ res' = [status |-> 200, promise |-> PromiseToRecord(projected)]
-            /\ UNCHANGED <<blobs, markers>>
-     ELSE
-       /\ res' = [status |-> 200, promise |-> PromiseToRecord(pAwaited)]
-       /\ UNCHANGED <<blobs, markers>>
+       UNCHANGED <<blobs, markers>>
 
 \* P-05 promise.register_listener
 PromiseRegisterListener(req) ==
   LET origin == OriginOf(req.awaited)
-      wf == blobs[origin]
-      pAwaited == GetPromise(wf.promises, req.awaited) IN
+      wf == blobs[origin] IN
   /\ ShardSwept(wf, now)
-  /\ IF pAwaited = NULL THEN
-       /\ res' = [status |-> 404, promise |-> NULL]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE IF pAwaited.state = "pending" THEN
-       IF pAwaited.timeoutAt > now THEN
-         LET wfNew == [wf EXCEPT
-                         !.promises = SetPromise(@, PromiseAddListener(pAwaited,
-                                                                       req.address))]
-         IN /\ blobs' = [blobs EXCEPT ![origin] = wfNew]
-            /\ markers' = ReconcileMarkers(origin, wf, wfNew)
-            /\ res' = [status |-> 200, promise |-> PromiseToRecord(pAwaited)]
-       ELSE
-         LET projected == Projected(pAwaited)
-         IN /\ res' = [status |-> 200, promise |-> PromiseToRecord(projected)]
-            /\ UNCHANGED <<blobs, markers>>
+  /\ IF /\ req.awaited \in DOMAIN wf.promises
+        /\ wf.promises[req.awaited].state = "pending"
+        /\ wf.promises[req.awaited].timeoutAt > now
+     THEN
+       LET wfNew == [wf EXCEPT
+                       !.promises = SetPromise(@, PromiseAddListener(
+                                        wf.promises[req.awaited], req.address))]
+       IN /\ blobs' = [blobs EXCEPT ![origin] = wfNew]
+          /\ markers' = ReconcileMarkers(origin, wf, wfNew)
      ELSE
-       /\ res' = [status |-> 200, promise |-> PromiseToRecord(pAwaited)]
-       /\ UNCHANGED <<blobs, markers>>
-
-\* P-06 promise.search -- 501, unroutable (no id): no shard, no sweep.
-PromiseSearch(req) ==
-  /\ res' = [status |-> 501, promises |-> <<>>, cursor |-> NULL]
-  /\ UNCHANGED <<blobs, markers>>
-
-\* T-01 task.get -- a READ: projected fulfilled once its promise is no
-\* longer effectively pending (libr8 task_get).
-TaskGet(req) ==
-  LET wf == blobs[OriginOf(req.id)]
-      t == GetTask(wf.tasks, req.id) IN
-  /\ IF t = NULL THEN
-       res' = [status |-> 404, task |-> NULL]
-     ELSE
-       LET p == GetPromise(wf.promises, t.id) IN
-       IF p = NULL THEN
-         res' = [status |-> 404, task |-> NULL]
-       ELSE IF p.state = "pending" /\ p.timeoutAt > now THEN
-         res' = [status |-> 200, task |-> TaskToRecord(t)]
-       ELSE
-         res' = [status |-> 200, task |->
-                   TaskToRecord([t EXCEPT !.state = "fulfilled", !.pid = NULL,
-                                          !.ttl = NULL, !.resumes = {}])]
-  /\ UNCHANGED <<blobs, markers>>
+       UNCHANGED <<blobs, markers>>
 
 \* T-02 task.create
 TaskCreate(req) ==
   LET a  == req.action
       origin == OriginOf(a.id)
-      wf == blobs[origin]
-      p0 == GetPromise(wf.promises, a.id) IN
+      wf == blobs[origin] IN
   /\ ShardSwept(wf, now)
-  /\ IF p0 = NULL THEN
-       \* untargeted action: unroutable (mirrors the abstract spec)
+  /\ IF a.id \notin DOMAIN wf.promises THEN
+       \* untargeted action: unroutable (422; mirrors the abstract spec)
        IF ~TagsHas(a.tags, "resonate:target") THEN
-         /\ res' = [status |-> 422, task |-> NULL, promise |-> NULL, preload |-> <<>>]
-         /\ UNCHANGED <<blobs, markers>>
+         UNCHANGED <<blobs, markers>>
        ELSE IF a.timeoutAt > now THEN
          LET p == PromiseCreated(a)
              t == [id |-> p.id, state |-> "acquired", version |-> 1,
@@ -640,8 +544,6 @@ TaskCreate(req) ==
                        outbox          |-> wf.outbox]
          IN /\ blobs' = [blobs EXCEPT ![origin] = wfNew]
             /\ markers' = ReconcileMarkers(origin, wf, wfNew)
-            /\ res' = [status |-> 200, task |-> TaskToRecord(t),
-                       promise |-> PromiseToRecord(p), preload |-> <<>>]
        ELSE
          LET p  == PromiseCreatedExpired(a)
              t  == [id |-> p.id, state |-> "fulfilled", version |-> 0,
@@ -650,118 +552,76 @@ TaskCreate(req) ==
                                  !.tasks = SetTask(@, t)]
          IN /\ blobs' = [blobs EXCEPT ![origin] = wfNew]
             /\ markers' = ReconcileMarkers(origin, wf, wfNew)
-            /\ res' = [status |-> 200, task |-> TaskToRecord(t),
-                       promise |-> PromiseToRecord(p), preload |-> <<>>]
      ELSE
-       IF ~TagsHas(p0.tags, "resonate:target") THEN
-         /\ res' = [status |-> 422, task |-> NULL, promise |-> NULL, preload |-> <<>>]
-         /\ UNCHANGED <<blobs, markers>>
+       IF /\ TagsHas(wf.promises[a.id].tags, "resonate:target")
+          /\ a.id \in DOMAIN wf.tasks
+          /\ wf.tasks[a.id].state = "pending"
+       THEN
+         LET t == [wf.tasks[a.id] EXCEPT !.state = "acquired", !.version = @ + 1,
+                                         !.ttl = req.ttl, !.pid = req.pid,
+                                         !.resumes = {}]
+             wfNew == [wf EXCEPT
+                         !.tasks = SetTask(@, t),
+                         !.taskTimeouts = SetTaskTimeout(DelTaskTimeout(@, t.id),
+                                                         t.id, 1, now + req.ttl)]
+         IN /\ blobs' = [blobs EXCEPT ![origin] = wfNew]
+            /\ markers' = ReconcileMarkers(origin, wf, wfNew)
        ELSE
-       LET t0 == GetTask(wf.tasks, p0.id) IN
-       IF t0 # NULL THEN
-         IF t0.state = "fulfilled" THEN
-           /\ res' = [status |-> 200, task |-> TaskToRecord(t0),
-                      promise |-> PromiseToRecord(p0), preload |-> <<>>]
-           /\ UNCHANGED <<blobs, markers>>
-         ELSE IF t0.state = "pending" THEN
-           LET t == [t0 EXCEPT !.state = "acquired", !.version = t0.version + 1,
-                               !.ttl = req.ttl, !.pid = req.pid, !.resumes = {}]
-               wfNew == [wf EXCEPT
-                           !.tasks = SetTask(@, t),
-                           !.taskTimeouts = SetTaskTimeout(DelTaskTimeout(@, t.id),
-                                                           t.id, 1, now + req.ttl)]
-           IN /\ blobs' = [blobs EXCEPT ![origin] = wfNew]
-              /\ markers' = ReconcileMarkers(origin, wf, wfNew)
-              /\ res' = [status |-> 200, task |-> TaskToRecord(t),
-                         promise |-> PromiseToRecord(p0), preload |-> <<>>]
-         ELSE
-           /\ res' = [status |-> 409, task |-> NULL, promise |-> NULL, preload |-> <<>>]
-           /\ UNCHANGED <<blobs, markers>>
-       ELSE
-         /\ res' = [status |-> 409, task |-> NULL, promise |-> NULL, preload |-> <<>>]
-         /\ UNCHANGED <<blobs, markers>>
+         \* fulfilled (idempotent), non-pending, missing task, or untargeted
+         UNCHANGED <<blobs, markers>>
 
 \* T-03 task.acquire
 TaskAcquire(req) ==
   LET origin == OriginOf(req.id)
-      wf == blobs[origin]
-      t0 == GetTask(wf.tasks, req.id) IN
+      wf == blobs[origin] IN
   /\ ShardSwept(wf, now)
-  /\ IF t0 = NULL THEN
-       /\ res' = [status |-> 404, task |-> NULL, promise |-> NULL, preload |-> <<>>]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE
-     LET p == GetPromise(wf.promises, t0.id) IN
-     IF p = NULL THEN
-       /\ res' = [status |-> 409, task |-> NULL, promise |-> NULL, preload |-> <<>>]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE IF t0.state # "pending" THEN
-       /\ res' = [status |-> 409, task |-> NULL, promise |-> NULL, preload |-> <<>>]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE IF p.state # "pending" \/ p.timeoutAt <= now THEN
-       /\ res' = [status |-> 409, task |-> NULL, promise |-> NULL, preload |-> <<>>]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE IF t0.version # req.version THEN
-       /\ res' = [status |-> 409, task |-> NULL, promise |-> NULL, preload |-> <<>>]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE
-       LET t == [t0 EXCEPT !.state = "acquired", !.version = t0.version + 1,
-                           !.ttl = req.ttl, !.pid = req.pid, !.resumes = {}]
+  /\ IF /\ req.id \in DOMAIN wf.tasks
+        /\ req.id \in DOMAIN wf.promises
+        /\ wf.tasks[req.id].state = "pending"
+        /\ wf.promises[req.id].state = "pending"
+        /\ wf.promises[req.id].timeoutAt > now
+        /\ wf.tasks[req.id].version = req.version
+     THEN
+       LET t == [wf.tasks[req.id] EXCEPT !.state = "acquired", !.version = @ + 1,
+                                         !.ttl = req.ttl, !.pid = req.pid,
+                                         !.resumes = {}]
            wfNew == [wf EXCEPT
                        !.tasks = SetTask(@, t),
                        !.taskTimeouts = SetTaskTimeout(DelTaskTimeout(@, t.id),
                                                        t.id, 1, now + req.ttl)]
        IN /\ blobs' = [blobs EXCEPT ![origin] = wfNew]
           /\ markers' = ReconcileMarkers(origin, wf, wfNew)
-          /\ res' = [status |-> 200, task |-> TaskToRecord(t),
-                     promise |-> PromiseToRecord(p), preload |-> <<>>]
+     ELSE
+       UNCHANGED <<blobs, markers>>
+
+\* The fenced guard (task acquired, promise live, version match) on one
+\* workflow, shared by fence, fulfill, and release.
+WfFenceOk(wf, id, version) ==
+  /\ id \in DOMAIN wf.tasks
+  /\ id \in DOMAIN wf.promises
+  /\ wf.tasks[id].state = "acquired"
+  /\ wf.promises[id].state = "pending"
+  /\ wf.promises[id].timeoutAt > now
+  /\ wf.tasks[id].version = version
 
 \* T-04 task.fence -- the inner action runs against the FENCE task's
 \* workflow (blobfun applies CreateOnWf/SettleOnWf to the fence's shard;
-\* same-origin makes that the inner id's shard too). Composition by
-\* conjunction: inner state effects /\ the fence response embedding the
-\* inner response function.
+\* same-origin makes that the inner id's shard too).
 TaskFence(req) ==
-  LET origin == OriginOf(req.id)
-      wf == blobs[origin]
-      t == GetTask(wf.tasks, req.id) IN
-  /\ ShardSwept(wf, now)
-  /\ IF t = NULL THEN
-       /\ res' = [status |-> 404, action |-> NULL, preload |-> <<>>]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE
-     LET p == GetPromise(wf.promises, t.id) IN
-     IF p = NULL THEN
-       /\ res' = [status |-> 409, action |-> NULL, preload |-> <<>>]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE IF t.state # "acquired" THEN
-       /\ res' = [status |-> 409, action |-> NULL, preload |-> <<>>]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE IF p.state # "pending" \/ p.timeoutAt <= now THEN
-       /\ res' = [status |-> 409, action |-> NULL, preload |-> <<>>]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE IF t.version # req.version THEN
-       /\ res' = [status |-> 409, action |-> NULL, preload |-> <<>>]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE IF req.action.type = "create" THEN
-       /\ PromiseCreateAt(origin, req.action.req)
-       /\ res' = [status |-> 200,
-                  action |-> [type |-> "create",
-                              res |-> PromiseCreateResAt(origin, req.action.req)],
-                  preload |-> <<>>]
-     ELSE
-       /\ PromiseSettleAt(origin, req.action.req)
-       /\ res' = [status |-> 200,
-                  action |-> [type |-> "settle",
-                              res |-> PromiseSettleResAt(origin, req.action.req)],
-                  preload |-> <<>>]
+  LET origin == OriginOf(req.id) IN
+  IF ~WfFenceOk(blobs[origin], req.id, req.version) THEN
+    /\ ShardSwept(blobs[origin], now)
+    /\ UNCHANGED <<blobs, markers>>
+  ELSE IF req.action.type = "create" THEN
+    PromiseCreateAt(origin, req.action.req)
+  ELSE
+    PromiseSettleAt(origin, req.action.req)
 
 \* T-05 task.heartbeat -- routed by the FIRST ref's origin; a worker
 \* heartbeats per shard (same-origin). Empty list: unroutable, pure no-op.
 TaskHeartbeat(req) ==
   IF req.tasks = <<>> THEN
-    /\ res' = [status |-> 200]
-    /\ UNCHANGED <<blobs, markers>>
+    UNCHANGED <<blobs, markers>>
   ELSE
     LET origin == OriginOf(Head(req.tasks).id)
         wf == blobs[origin] IN
@@ -785,55 +645,37 @@ TaskHeartbeat(req) ==
                           ELSE @[k]]]
        IN /\ blobs' = [blobs EXCEPT ![origin] = wfNew]
           /\ markers' = ReconcileMarkers(origin, wf, wfNew)
-          /\ res' = [status |-> 200]
 
 \* T-06 task.suspend -- awaited promises are looked up in the task's
-\* workflow (same-origin).
+\* workflow (same-origin). Rejected (422): an empty actions list, an
+\* action awaiting the task's own promise, or a missing awaited promise.
 TaskSuspend(req) ==
   LET origin == OriginOf(req.id)
-      wf == blobs[origin]
-      t0 == GetTask(wf.tasks, req.id) IN
+      wf == blobs[origin] IN
   /\ ShardSwept(wf, now)
-  /\ IF req.actions = <<>> THEN
-       \* suspending on nothing would park the task forever (mirrors the
-       \* abstract spec)
-       /\ res' = [status |-> 422, preload |-> <<>>]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE IF t0 = NULL THEN
-       /\ res' = [status |-> 404, preload |-> <<>>]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE
-     LET tp == GetPromise(wf.promises, t0.id) IN
-     IF tp = NULL THEN
-       /\ res' = [status |-> 409, preload |-> <<>>]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE IF t0.state # "acquired" THEN
-       /\ res' = [status |-> 409, preload |-> <<>>]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE IF tp.state # "pending" \/ tp.timeoutAt <= now THEN
-       /\ res' = [status |-> 409, preload |-> <<>>]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE IF t0.version # req.version THEN
-       /\ res' = [status |-> 409, preload |-> <<>>]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE IF \E i \in DOMAIN req.actions : req.actions[i].awaited = req.id THEN
-       \* a task cannot await its own promise (mirrors the abstract spec)
-       /\ res' = [status |-> 422, preload |-> <<>>]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE IF \E i \in DOMAIN req.actions :
-               GetPromise(wf.promises, req.actions[i].awaited) = NULL THEN
-       /\ res' = [status |-> 422, preload |-> <<>>]
-       /\ UNCHANGED <<blobs, markers>>
+  /\ IF ~(/\ req.actions # <<>>
+          /\ req.id \in DOMAIN wf.tasks
+          /\ req.id \in DOMAIN wf.promises
+          /\ wf.tasks[req.id].state = "acquired"
+          /\ wf.promises[req.id].state = "pending"
+          /\ wf.promises[req.id].timeoutAt > now
+          /\ wf.tasks[req.id].version = req.version
+          /\ \A i \in DOMAIN req.actions : req.actions[i].awaited # req.id
+          /\ \A i \in DOMAIN req.actions :
+               req.actions[i].awaited \in DOMAIN wf.promises)
+     THEN
+       UNCHANGED <<blobs, markers>>
      ELSE
        LET settled == \E i \in DOMAIN req.actions :
-                        LET pa == GetPromise(wf.promises, req.actions[i].awaited)
+                        LET pa == wf.promises[req.actions[i].awaited]
                         IN pa.state # "pending" \/ pa.timeoutAt <= now
        IN
        IF settled THEN
-         LET wfNew == [wf EXCEPT !.tasks = SetTask(@, [t0 EXCEPT !.resumes = {}])]
+         \* declined (300): re-check instead of parking
+         LET wfNew == [wf EXCEPT !.tasks = SetTask(@, [wf.tasks[req.id]
+                                                        EXCEPT !.resumes = {}])]
          IN /\ blobs' = [blobs EXCEPT ![origin] = wfNew]
             /\ markers' = ReconcileMarkers(origin, wf, wfNew)
-            /\ res' = [status |-> 300, preload |-> <<>>]
        ELSE
          LET awaitedIds == {req.actions[i].awaited : i \in DOMAIN req.actions}
              wfNew == [wf EXCEPT
@@ -841,39 +683,24 @@ TaskSuspend(req) ==
                                          IF id \in awaitedIds
                                          THEN PromiseAddCallback(@[id], req.id)
                                          ELSE @[id]],
-                         !.tasks = SetTask(@, [t0 EXCEPT !.state = "suspended",
-                                                         !.pid = NULL, !.ttl = NULL,
-                                                         !.resumes = {}]),
-                         !.taskTimeouts = DelTaskTimeout(@, t0.id)]
+                         !.tasks = SetTask(@, [wf.tasks[req.id]
+                                                EXCEPT !.state = "suspended",
+                                                       !.pid = NULL, !.ttl = NULL,
+                                                       !.resumes = {}]),
+                         !.taskTimeouts = DelTaskTimeout(@, req.id)]
          IN /\ blobs' = [blobs EXCEPT ![origin] = wfNew]
             /\ markers' = ReconcileMarkers(origin, wf, wfNew)
-            /\ res' = [status |-> 200, preload |-> <<>>]
 
 \* T-07 task.fulfill
 TaskFulfill(req) ==
   LET origin == OriginOf(req.id)
-      wf == blobs[origin]
-      t0 == GetTask(wf.tasks, req.id) IN
+      wf == blobs[origin] IN
   /\ ShardSwept(wf, now)
-  /\ IF t0 = NULL THEN
-       /\ res' = [status |-> 404, promise |-> NULL]
-       /\ UNCHANGED <<blobs, markers>>
+  /\ IF ~WfFenceOk(wf, req.id, req.version) THEN
+       UNCHANGED <<blobs, markers>>
      ELSE
-     LET p0 == GetPromise(wf.promises, t0.id) IN
-     IF p0 = NULL THEN
-       /\ res' = [status |-> 409, promise |-> NULL]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE IF t0.state # "acquired" THEN
-       /\ res' = [status |-> 409, promise |-> NULL]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE IF p0.state # "pending" \/ p0.timeoutAt <= now THEN
-       /\ res' = [status |-> 409, promise |-> NULL]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE IF t0.version # req.version THEN
-       /\ res' = [status |-> 409, promise |-> NULL]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE
-       LET listeners == p0.listeners
+       LET p0 == wf.promises[req.id]
+           listeners == p0.listeners
            callbacks == p0.callbacks
            p == PromiseSettled(p0, req.action)
            scrubbed == [i \in DOMAIN wf.promises |->
@@ -881,8 +708,10 @@ TaskFulfill(req) ==
                           THEN [wf.promises[i] EXCEPT !.callbacks = @ \ {p.id}]
                           ELSE wf.promises[i]]
            promises1 == SetPromise(scrubbed, p)
-           tasks1 == SetTask(wf.tasks, [t0 EXCEPT !.state = "fulfilled", !.pid = NULL,
-                                                  !.ttl = NULL, !.resumes = {}])
+           tasks1 == SetTask(wf.tasks, [wf.tasks[req.id]
+                                         EXCEPT !.state = "fulfilled",
+                                                !.pid = NULL, !.ttl = NULL,
+                                                !.resumes = {}])
            lkeys == {<<p.id, a>> : a \in listeners}
            unblocked == [k \in DOMAIN wf.outbox \cup lkeys |->
                            IF k \in lkeys
@@ -895,113 +724,83 @@ TaskFulfill(req) ==
                      promiseTimeouts |-> DelPromiseTimeout(wf.promiseTimeouts, p.id),
                      taskTimeouts    |-> ResumeTaskTimeouts(
                                            promises1,
-                                           DelTaskTimeout(wf.taskTimeouts, t0.id),
+                                           DelTaskTimeout(wf.taskTimeouts, req.id),
                                            tasks1, callbacks, now),
                      outbox          |-> ResumeMessages(unblocked,
                                                         promises1, tasks1, callbacks, now)]
        IN /\ blobs' = [blobs EXCEPT ![origin] = wfNew]
           /\ markers' = ReconcileMarkers(origin, wf, wfNew)
-          /\ res' = [status |-> 200, promise |-> PromiseToRecord(p)]
 
 \* T-08 task.release
 TaskRelease(req) ==
-  LET retryTimeout == config.retryTimeout
-      origin == OriginOf(req.id)
-      wf == blobs[origin]
-      t0 == GetTask(wf.tasks, req.id) IN
+  LET origin == OriginOf(req.id)
+      wf == blobs[origin] IN
   /\ ShardSwept(wf, now)
-  /\ IF t0 = NULL THEN
-       /\ res' = [status |-> 404]
-       /\ UNCHANGED <<blobs, markers>>
+  /\ IF ~WfFenceOk(wf, req.id, req.version) THEN
+       UNCHANGED <<blobs, markers>>
      ELSE
-     LET p == GetPromise(wf.promises, t0.id) IN
-     IF p = NULL THEN
-       /\ res' = [status |-> 409]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE IF t0.state # "acquired" THEN
-       /\ res' = [status |-> 409]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE IF p.state # "pending" \/ p.timeoutAt <= now THEN
-       /\ res' = [status |-> 409]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE IF t0.version # req.version THEN
-       /\ res' = [status |-> 409]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE
-       LET t == [t0 EXCEPT !.state = "pending", !.pid = NULL, !.ttl = NULL]
+       LET retryTimeout == config.retryTimeout
+           t == [wf.tasks[req.id] EXCEPT !.state = "pending",
+                                         !.pid = NULL, !.ttl = NULL]
            wfNew == [wf EXCEPT
                        !.tasks = SetTask(@, t),
                        !.taskTimeouts = SetTaskTimeout(DelTaskTimeout(@, t.id),
                                                        t.id, 0, now + retryTimeout),
                        !.outbox = SendMsg(@,
-                                    IF TagsGet(p.tags, "resonate:target") = NULL
-                                    THEN "" ELSE TagsGet(p.tags, "resonate:target"),
+                                    IF TagsGet(wf.promises[req.id].tags,
+                                               "resonate:target") = NULL
+                                    THEN ""
+                                    ELSE TagsGet(wf.promises[req.id].tags,
+                                                 "resonate:target"),
                                     [type |-> "execute", taskId |-> t.id,
                                      version |-> t.version])]
        IN /\ blobs' = [blobs EXCEPT ![origin] = wfNew]
           /\ markers' = ReconcileMarkers(origin, wf, wfNew)
-          /\ res' = [status |-> 200]
 
 \* T-09 task.halt
 TaskHalt(req) ==
   LET origin == OriginOf(req.id)
-      wf == blobs[origin]
-      t == GetTask(wf.tasks, req.id) IN
+      wf == blobs[origin] IN
   /\ ShardSwept(wf, now)
-  /\ IF t = NULL THEN
-       /\ res' = [status |-> 404]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE IF t.state = "fulfilled" THEN
-       /\ res' = [status |-> 409]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE IF t.state = "halted" THEN
-       /\ res' = [status |-> 200]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE
+  /\ IF req.id \in DOMAIN wf.tasks
+        /\ wf.tasks[req.id].state \notin {"fulfilled", "halted"}
+     THEN
        LET wfNew == [wf EXCEPT
-                       !.tasks = SetTask(@, [t EXCEPT !.state = "halted",
-                                                      !.pid = NULL, !.ttl = NULL]),
-                       !.taskTimeouts = DelTaskTimeout(@, t.id)]
+                       !.tasks = SetTask(@, [wf.tasks[req.id]
+                                              EXCEPT !.state = "halted",
+                                                     !.pid = NULL, !.ttl = NULL]),
+                       !.taskTimeouts = DelTaskTimeout(@, req.id)]
        IN /\ blobs' = [blobs EXCEPT ![origin] = wfNew]
           /\ markers' = ReconcileMarkers(origin, wf, wfNew)
-          /\ res' = [status |-> 200]
+     ELSE
+       UNCHANGED <<blobs, markers>>
 
 \* T-10 task.continue
 TaskContinue(req) ==
-  LET retryTimeout == config.retryTimeout
-      origin == OriginOf(req.id)
-      wf == blobs[origin]
-      t0 == GetTask(wf.tasks, req.id) IN
+  LET origin == OriginOf(req.id)
+      wf == blobs[origin] IN
   /\ ShardSwept(wf, now)
-  /\ IF t0 = NULL THEN
-       /\ res' = [status |-> 404]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE IF t0.state # "halted" THEN
-       /\ res' = [status |-> 409]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE
-     LET p == GetPromise(wf.promises, t0.id) IN
-     IF p = NULL THEN
-       /\ res' = [status |-> 404]
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE
-       LET t == [t0 EXCEPT !.state = "pending"]
+  /\ IF /\ req.id \in DOMAIN wf.tasks
+        /\ wf.tasks[req.id].state = "halted"
+        /\ req.id \in DOMAIN wf.promises
+     THEN
+       LET retryTimeout == config.retryTimeout
+           t == [wf.tasks[req.id] EXCEPT !.state = "pending"]
            wfNew == [wf EXCEPT
                        !.tasks = SetTask(@, t),
                        !.taskTimeouts = SetTaskTimeout(@, t.id, 0, now + retryTimeout),
                        !.outbox = SendMsg(@,
-                                    IF TagsGet(p.tags, "resonate:target") = NULL
-                                    THEN "" ELSE TagsGet(p.tags, "resonate:target"),
+                                    IF TagsGet(wf.promises[req.id].tags,
+                                               "resonate:target") = NULL
+                                    THEN ""
+                                    ELSE TagsGet(wf.promises[req.id].tags,
+                                                 "resonate:target"),
                                     [type |-> "execute", taskId |-> t.id,
                                      version |-> t.version])]
        IN /\ blobs' = [blobs EXCEPT ![origin] = wfNew]
           /\ markers' = ReconcileMarkers(origin, wf, wfNew)
-          /\ res' = [status |-> 200]
-
-\* T-11 task.search -- 501, unroutable: pure no-op.
-TaskSearch(req) ==
-  /\ res' = [status |-> 501, tasks |-> <<>>, cursor |-> NULL]
-  /\ UNCHANGED <<blobs, markers>>
+     ELSE
+       UNCHANGED <<blobs, markers>>
 
 -----------------------------------------------------------------------------
 (* Model: requests drawn nondeterministically. External-only tags and       *)
@@ -1070,25 +869,16 @@ TaskSuspendReqs ==
 
 -----------------------------------------------------------------------------
 (* Actions. Naming: X(req) is the handler (a parameterized action),         *)
-(* XRes/XResAt(...) its response (a state function of the pre-state), and   *)
 (* XAction the closed Next disjunct -- the environment submits some         *)
 (* request, the driver fires a due timeout, or the clock advances.          *)
 
-PromiseGetAction ==
-  \E req \in [id : PromiseIds] :
-    PromiseGet(req) /\ UNCHANGED now
-
 PromiseCreateAction ==
   \E req \in PromiseCreateReqs :
-    /\ PromiseCreateAt(OriginOf(req.id), req)
-    /\ res' = PromiseCreateResAt(OriginOf(req.id), req)
-    /\ UNCHANGED now
+    PromiseCreateAt(OriginOf(req.id), req) /\ UNCHANGED now
 
 PromiseSettleAction ==
   \E req \in PromiseSettleReqs :
-    /\ PromiseSettleAt(OriginOf(req.id), req)
-    /\ res' = PromiseSettleResAt(OriginOf(req.id), req)
-    /\ UNCHANGED now
+    PromiseSettleAt(OriginOf(req.id), req) /\ UNCHANGED now
 
 PromiseRegisterCallbackAction ==
   \E req \in RegisterCallbackReqs :
@@ -1097,14 +887,6 @@ PromiseRegisterCallbackAction ==
 PromiseRegisterListenerAction ==
   \E req \in [awaited : PromiseIds, address : Addresses] :
     PromiseRegisterListener(req) /\ UNCHANGED now
-
-PromiseSearchAction ==
-  PromiseSearch([state |-> NULL, tags |-> <<>>, limit |-> NULL, cursor |-> NULL])
-    /\ UNCHANGED now
-
-TaskGetAction ==
-  \E req \in [id : PromiseIds] :
-    TaskGet(req) /\ UNCHANGED now
 
 TaskCreateAction ==
   \E req \in [pid : Pids, ttl : TTLs, action : PromiseCreateReqs] :
@@ -1135,16 +917,10 @@ TaskReleaseAction ==
     TaskRelease(req) /\ UNCHANGED now
 
 TaskHaltAction ==
-  \E req \in [id : PromiseIds] :
-    TaskHalt(req) /\ UNCHANGED now
+  \E req \in [id : PromiseIds] : TaskHalt(req) /\ UNCHANGED now
 
 TaskContinueAction ==
-  \E req \in [id : PromiseIds] :
-    TaskContinue(req) /\ UNCHANGED now
-
-TaskSearchAction ==
-  TaskSearch([state |-> NULL, limit |-> NULL, cursor |-> NULL])
-    /\ UNCHANGED now
+  \E req \in [id : PromiseIds] : TaskContinue(req) /\ UNCHANGED now
 
 \* The decomposed sweep / driver wake: fire ONE due timeout entry of one
 \* workflow at the current instant. The real commit runs these to
@@ -1157,13 +933,11 @@ SweepDueAction ==
       /\ IF entry.type = "promise" THEN OnPromiseTimeout(origin, entry.id, now)
          ELSE IF entry.kind = 0 THEN OnTaskRetryTimeout(origin, entry.id, now)
          ELSE OnTaskLeaseTimeout(origin, entry.id, now)
-      /\ res' = NULL
       /\ UNCHANGED now
 
 AdvanceClockAction ==
   \E newNow \in (now + 1)..MaxTime :
     /\ now' = newNow
-    /\ res' = NULL
     /\ UNCHANGED <<blobs, markers>>
 
 -----------------------------------------------------------------------------
@@ -1171,15 +945,11 @@ AdvanceClockAction ==
 Init == /\ blobs = [o \in Origins |-> EmptyWf]
         /\ markers = {}
         /\ now = 0
-        /\ res = NULL
 
-Next == \/ PromiseGetAction
-        \/ PromiseCreateAction
+Next == \/ PromiseCreateAction
         \/ PromiseSettleAction
         \/ PromiseRegisterCallbackAction
         \/ PromiseRegisterListenerAction
-        \/ PromiseSearchAction
-        \/ TaskGetAction
         \/ TaskCreateAction
         \/ TaskAcquireAction
         \/ TaskFenceAction
@@ -1189,7 +959,6 @@ Next == \/ PromiseGetAction
         \/ TaskReleaseAction
         \/ TaskHaltAction
         \/ TaskContinueAction
-        \/ TaskSearchAction
         \/ SweepDueAction
         \/ AdvanceClockAction
 
@@ -1222,13 +991,6 @@ ShardIntegrity ==
 Constraint == \A o \in Origins : \A id \in DOMAIN blobs[o].tasks :
                 blobs[o].tasks[id].version <= 3
 
-(* State identity for TLC (cfg: VIEW View): the last response is an         *)
-(* observation of a step, not state -- no handler reads `res`, so           *)
-(* successors and the per-transition refinement check (which constrains     *)
-(* res') are independent of it. A transition collapsed by the view differs  *)
-(* from its explored representative only in the pre-state's response,       *)
-(* which no action and no non-stuttering branch of the property reads.      *)
-View == <<blobs, markers, now>>
 
 -----------------------------------------------------------------------------
 (* THE REFINEMENT:  BlobServer  =>  Server.                                 *)
@@ -1281,7 +1043,7 @@ Abs == INSTANCE Server
               promiseTimeouts <- AbsPromiseTimeouts,
               taskTimeouts    <- AbsTaskTimeouts,
               outbox          <- AbsOutbox
-         \* now, res and all constants map by name.
+         \* now and all constants map by name.
 
 Refinement == Abs!Spec
 
