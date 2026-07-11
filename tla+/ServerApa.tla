@@ -805,32 +805,77 @@ Init == /\ promises = SetAsFun({})
         /\ outbox = SetAsFun({})
         /\ now = 0
 
-Next ==
-  \/ \E req \in PromiseCreateReqs : PromiseCreate(req) /\ UNCHANGED now
-  \/ \E req \in PromiseSettleReqs : PromiseSettle(req) /\ UNCHANGED now
-  \/ \E req \in RegisterCallbackReqs : PromiseRegisterCallback(req) /\ UNCHANGED now
-  \/ \E req \in [awaited : PromiseIds, address : Addresses] :
-       PromiseRegisterListener(req) /\ UNCHANGED now
-  \/ \E req \in [pid : Pids, ttl : TTLs, action : PromiseCreateReqs] :
-       TaskCreate(req) /\ UNCHANGED now
-  \/ \E req \in [id : PromiseIds, version : Versions, pid : Pids, ttl : TTLs] :
-       TaskAcquire(req) /\ UNCHANGED now
-  \/ \E req \in TaskFenceReqs : TaskFence(req) /\ UNCHANGED now
-  \/ \E req \in [pid : Pids, tasks : HeartbeatLists] :
-       TaskHeartbeat(req) /\ UNCHANGED now
-  \/ \E req \in [id : PromiseIds, version : Versions, actions : SuspendLists] :
-       TaskSuspend(req) /\ UNCHANGED now
-  \/ \E req \in [id : PromiseIds, version : Versions, action : PromiseSettleReqs] :
-       TaskFulfill(req) /\ UNCHANGED now
-  \/ \E req \in [id : PromiseIds, version : Versions] :
-       TaskRelease(req) /\ UNCHANGED now
-  \/ \E req \in [id : PromiseIds] : TaskHalt(req) /\ UNCHANGED now
-  \/ \E req \in [id : PromiseIds] : TaskContinue(req) /\ UNCHANGED now
-  \/ \E newNow \in now..MaxTime :
-       /\ \/ /\ newNow > now
-             /\ UNCHANGED serverVars
-          \/ \E entry \in Eligible(newNow) : Fire(entry, newNow)
-       /\ now' = newNow
+\* Naming: X(req) is the handler (a parameterized action), XAction the
+\* closed Next disjunct (no XRes layer here: `res` is dropped in this
+\* variant).
+
+PromiseCreateAction ==
+  \E req \in PromiseCreateReqs : PromiseCreate(req) /\ UNCHANGED now
+
+PromiseSettleAction ==
+  \E req \in PromiseSettleReqs : PromiseSettle(req) /\ UNCHANGED now
+
+PromiseRegisterCallbackAction ==
+  \E req \in RegisterCallbackReqs : PromiseRegisterCallback(req) /\ UNCHANGED now
+
+PromiseRegisterListenerAction ==
+  \E req \in [awaited : PromiseIds, address : Addresses] :
+    PromiseRegisterListener(req) /\ UNCHANGED now
+
+TaskCreateAction ==
+  \E req \in [pid : Pids, ttl : TTLs, action : PromiseCreateReqs] :
+    TaskCreate(req) /\ UNCHANGED now
+
+TaskAcquireAction ==
+  \E req \in [id : PromiseIds, version : Versions, pid : Pids, ttl : TTLs] :
+    TaskAcquire(req) /\ UNCHANGED now
+
+TaskFenceAction ==
+  \E req \in TaskFenceReqs : TaskFence(req) /\ UNCHANGED now
+
+TaskHeartbeatAction ==
+  \E req \in [pid : Pids, tasks : HeartbeatLists] :
+    TaskHeartbeat(req) /\ UNCHANGED now
+
+TaskSuspendAction ==
+  \E req \in [id : PromiseIds, version : Versions, actions : SuspendLists] :
+    TaskSuspend(req) /\ UNCHANGED now
+
+TaskFulfillAction ==
+  \E req \in [id : PromiseIds, version : Versions, action : PromiseSettleReqs] :
+    TaskFulfill(req) /\ UNCHANGED now
+
+TaskReleaseAction ==
+  \E req \in [id : PromiseIds, version : Versions] :
+    TaskRelease(req) /\ UNCHANGED now
+
+TaskHaltAction ==
+  \E req \in [id : PromiseIds] : TaskHalt(req) /\ UNCHANGED now
+
+TaskContinueAction ==
+  \E req \in [id : PromiseIds] : TaskContinue(req) /\ UNCHANGED now
+
+TickAction ==
+  \E newNow \in now..MaxTime :
+    /\ \/ /\ newNow > now
+          /\ UNCHANGED serverVars
+       \/ \E entry \in Eligible(newNow) : Fire(entry, newNow)
+    /\ now' = newNow
+
+Next == \/ PromiseCreateAction
+        \/ PromiseSettleAction
+        \/ PromiseRegisterCallbackAction
+        \/ PromiseRegisterListenerAction
+        \/ TaskCreateAction
+        \/ TaskAcquireAction
+        \/ TaskFenceAction
+        \/ TaskHeartbeatAction
+        \/ TaskSuspendAction
+        \/ TaskFulfillAction
+        \/ TaskReleaseAction
+        \/ TaskHaltAction
+        \/ TaskContinueAction
+        \/ TickAction
 
 -----------------------------------------------------------------------------
 (* Invariants.                                                              *)

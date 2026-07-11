@@ -1033,7 +1033,10 @@ SuspendLists == {<<>>}
                                      a2 \in RegisterCallbackReqs}
 
 -----------------------------------------------------------------------------
-(* One action per protocol handler.                                         *)
+(* One action per protocol handler. Naming: X(req) is the handler (a        *)
+(* parameterized action), XRes(req) its response (a state function of the   *)
+(* pre-state), and XAction the closed Next disjunct -- the environment      *)
+(* submits some request, or the tick fires/advances.                        *)
 
 PromiseGetAction ==
   \E req \in [id : PromiseIds] :

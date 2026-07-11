@@ -22,14 +22,14 @@
 (* atomic (contention only retries; blobfun models the ideal single-op     *)
 (* case, as do we). TLA+ refinement is checked step for step, so the       *)
 (* commit is decomposed into micro-steps that are each one abstract step:  *)
-(*   - SweepDue fires ONE due timeout entry of one workflow (= the          *)
+(*   - SweepDueAction fires ONE due timeout entry of one workflow (= the          *)
 (*     abstract TickAction at an unchanged clock);                          *)
 (*   - a mutating handler requires its workflow to be SWEPT (no due         *)
 (*     entries) -- the sweep prefix of the real commit has been factored    *)
-(*     into SweepDue steps; the remaining Apply is one abstract step.       *)
+(*     into SweepDueAction steps; the remaining Apply is one abstract step.       *)
 (*   - reads (get / search) take no store write: they answer by             *)
 (*     projection (libr8 `projected`), so they need no sweep guard.         *)
-(* A real commit is exactly a SweepDue* ; Handler sequence of these         *)
+(* A real commit is exactly a SweepDueAction* ; Handler sequence of these         *)
 (* micro-steps; the model additionally allows other requests to interleave  *)
 (* between them, a superset of behaviors that must (and does) still refine. *)
 (*                                                                          *)
@@ -77,7 +77,7 @@ CONSTANTS Origins,     \* workflow keys: one blob per origin
 VARIABLES blobs,    \* [Origins -> workflow record]: the bucket, one blob per workflow
           markers   \* the timer index: {[deadline, origin]} -- the driver's wake structure
 
-VARIABLES now,      \* the clock; only SweepDue/AdvanceClock read/move it
+VARIABLES now,      \* the clock; only SweepDueAction/AdvanceClockAction read/move it
           res       \* the response of the last handler call
 
 vars == <<blobs, markers, now, res>>
@@ -1069,7 +1069,10 @@ TaskSuspendReqs ==
        OriginOf(r.actions[i].awaited) = OriginOf(r.id)}
 
 -----------------------------------------------------------------------------
-(* Actions.                                                                 *)
+(* Actions. Naming: X(req) is the handler (a parameterized action),         *)
+(* XRes/XResAt(...) its response (a state function of the pre-state), and   *)
+(* XAction the closed Next disjunct -- the environment submits some         *)
+(* request, the driver fires a due timeout, or the clock advances.          *)
 
 PromiseGetAction ==
   \E req \in [id : PromiseIds] :
@@ -1148,7 +1151,7 @@ TaskSearchAction ==
 \* exhaustion before Apply (the ShardSwept guard); the real sweep fires
 \* them in a fixed priority order (libr8: promise, lease, retry) -- one of
 \* the schedules this action's nondeterminism allows.
-SweepDue ==
+SweepDueAction ==
   \E origin \in Origins :
     \E entry \in WfEligible(blobs[origin], now) :
       /\ IF entry.type = "promise" THEN OnPromiseTimeout(origin, entry.id, now)
@@ -1157,7 +1160,7 @@ SweepDue ==
       /\ res' = NULL
       /\ UNCHANGED now
 
-AdvanceClock ==
+AdvanceClockAction ==
   \E newNow \in (now + 1)..MaxTime :
     /\ now' = newNow
     /\ res' = NULL
@@ -1187,8 +1190,8 @@ Next == \/ PromiseGetAction
         \/ TaskHaltAction
         \/ TaskContinueAction
         \/ TaskSearchAction
-        \/ SweepDue
-        \/ AdvanceClock
+        \/ SweepDueAction
+        \/ AdvanceClockAction
 
 Spec == Init /\ [][Next]_vars
 
@@ -1236,7 +1239,7 @@ View == <<blobs, markers, now>>
 (* component is always an id) is found in the blob its id routes to         *)
 (* (ShardIntegrity).                                                        *)
 (*                                                                          *)
-(* Every micro-step maps to one abstract step: SweepDue and AdvanceClock    *)
+(* Every micro-step maps to one abstract step: SweepDueAction and AdvanceClockAction    *)
 (* to TickAction (fire one eligible entry / pure clock advance), each       *)
 (* handler to its abstract handler (the ShardSwept guard makes the          *)
 (* projection branches dead, so blob's post-sweep bodies coincide with the  *)
