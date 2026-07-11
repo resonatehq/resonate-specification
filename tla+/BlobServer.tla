@@ -157,6 +157,42 @@ SendMsg(ob, address, msg) ==
       key   == OutboxKey(entry)
   IN [k \in DOMAIN ob \cup {key} |-> IF k = key THEN entry ELSE ob[k]]
 
+\* The promise a live create stores; the promise an expired create stores
+\* (settled at birth); a settled promise; a pending promise past its
+\* deadline as observed (libr8 `projected`).
+PromiseCreated(req) ==
+  [id        |-> req.id,
+   state     |-> "pending",
+   param     |-> req.param,
+   value     |-> [headers |-> <<>>, data |-> NULL],
+   tags      |-> req.tags,
+   timeoutAt |-> req.timeoutAt,
+   createdAt |-> now,
+   settledAt |-> NULL,
+   callbacks |-> {},
+   listeners |-> {}]
+
+PromiseCreatedExpired(req) ==
+  [id        |-> req.id,
+   state     |-> IF TagsIsTimer(req.tags) THEN "resolved" ELSE "rejected_timedout",
+   param     |-> req.param,
+   value     |-> [headers |-> <<>>, data |-> NULL],
+   tags      |-> req.tags,
+   timeoutAt |-> req.timeoutAt,
+   createdAt |-> req.timeoutAt,
+   settledAt |-> req.timeoutAt,
+   callbacks |-> {},
+   listeners |-> {}]
+
+PromiseSettled(p, req) ==
+  [p EXCEPT !.state = req.state, !.value = req.value, !.settledAt = now,
+            !.callbacks = {}, !.listeners = {}]
+
+Projected(p) ==
+  IF PromiseIsTimer(p)
+  THEN [p EXCEPT !.state = "resolved", !.settledAt = p.timeoutAt]
+  ELSE [p EXCEPT !.state = "rejected_timedout", !.settledAt = p.timeoutAt]
+
 -----------------------------------------------------------------------------
 (* The resume cascade, per variable (libr8 enqueue_resume, sliced exactly   *)
 (* like the abstract spec's 00-resume section). `ts` is the tasks value     *)
@@ -356,10 +392,7 @@ PromiseGet(req) ==
        res' = [status |-> 404, promise |-> NULL]
      ELSE IF p.state = "pending" THEN
        IF p.timeoutAt <= now THEN
-         LET projected ==
-               IF PromiseIsTimer(p)
-               THEN [p EXCEPT !.state = "resolved", !.settledAt = p.timeoutAt]
-               ELSE [p EXCEPT !.state = "rejected_timedout", !.settledAt = p.timeoutAt]
+         LET projected == Projected(p)
          IN res' = [status |-> 200, promise |-> PromiseToRecord(projected)]
        ELSE
          res' = [status |-> 200, promise |-> PromiseToRecord(p)]
@@ -368,24 +401,28 @@ PromiseGet(req) ==
   /\ UNCHANGED <<blobs, markers>>
 
 \* P-02 promise.create -- applied at an explicit origin so task.fence can
-\* run it against the fence task's workflow (blobfun CreateOnWf).
-PromiseCreateAt(origin, req, Wrap(_)) ==
+\* run it against the fence task's workflow (blobfun CreateOnWf). The
+\* action constrains blobs/markers; the RESPONSE is a state function of
+\* the pre-state, embedded by the callers (composition by conjunction).
+PromiseCreateResAt(origin, req) ==
+  LET wf == blobs[origin]
+      p0 == GetPromise(wf.promises, req.id) IN
+  IF p0 = NULL THEN
+    IF req.timeoutAt > now
+    THEN [status |-> 200, promise |-> PromiseToRecord(PromiseCreated(req))]
+    ELSE [status |-> 200, promise |-> PromiseToRecord(PromiseCreatedExpired(req))]
+  ELSE IF p0.state = "pending" /\ p0.timeoutAt <= now
+  THEN [status |-> 200, promise |-> PromiseToRecord(Projected(p0))]
+  ELSE [status |-> 200, promise |-> PromiseToRecord(p0)]
+
+PromiseCreateAt(origin, req) ==
   LET retryTimeout == config.retryTimeout
       wf == blobs[origin]
       p0 == GetPromise(wf.promises, req.id) IN
   /\ ShardSwept(wf, now)
   /\ IF p0 = NULL THEN
        IF req.timeoutAt > now THEN
-         LET p == [id        |-> req.id,
-                   state     |-> "pending",
-                   param     |-> req.param,
-                   value     |-> [headers |-> <<>>, data |-> NULL],
-                   tags      |-> req.tags,
-                   timeoutAt |-> req.timeoutAt,
-                   createdAt |-> now,
-                   settledAt |-> NULL,
-                   callbacks |-> {},
-                   listeners |-> {}]
+         LET p == PromiseCreated(req)
              target == TagsGet(p.tags, "resonate:target")
              delay == TagsGet(p.tags, "resonate:delay")
              t == [id |-> p.id, state |-> "pending", version |-> 0,
@@ -418,21 +455,8 @@ PromiseCreateAt(origin, req, Wrap(_)) ==
                                                    version |-> t.version])]
          IN /\ blobs' = [blobs EXCEPT ![origin] = wfNew]
             /\ markers' = ReconcileMarkers(origin, wf, wfNew)
-            /\ res' = Wrap([status |-> 200, promise |-> PromiseToRecord(p)])
        ELSE
-         LET st == IF TagsIsTimer(req.tags)
-                   THEN "resolved"
-                   ELSE "rejected_timedout"
-             p  == [id        |-> req.id,
-                    state     |-> st,
-                    param     |-> req.param,
-                    value     |-> [headers |-> <<>>, data |-> NULL],
-                    tags      |-> req.tags,
-                    timeoutAt |-> req.timeoutAt,
-                    createdAt |-> req.timeoutAt,
-                    settledAt |-> req.timeoutAt,
-                    callbacks |-> {},
-                    listeners |-> {}]
+         LET p  == PromiseCreatedExpired(req)
              t  == [id |-> p.id, state |-> "fulfilled", version |-> 0,
                     ttl |-> NULL, pid |-> NULL, resumes |-> {}]
              wfNew == [wf EXCEPT
@@ -441,78 +465,65 @@ PromiseCreateAt(origin, req, Wrap(_)) ==
                                    THEN SetTask(@, t) ELSE @]
          IN /\ blobs' = [blobs EXCEPT ![origin] = wfNew]
             /\ markers' = ReconcileMarkers(origin, wf, wfNew)
-            /\ res' = Wrap([status |-> 200, promise |-> PromiseToRecord(p)])
      ELSE
-       \* idempotent by id (libr8 answers with the record as observed;
-       \* the projection branch is dead on a swept shard)
-       IF p0.state = "pending" /\ p0.timeoutAt <= now THEN
-         LET projected ==
-               IF PromiseIsTimer(p0)
-               THEN [p0 EXCEPT !.state = "resolved", !.settledAt = p0.timeoutAt]
-               ELSE [p0 EXCEPT !.state = "rejected_timedout", !.settledAt = p0.timeoutAt]
-         IN /\ res' = Wrap([status |-> 200, promise |-> PromiseToRecord(projected)])
-            /\ UNCHANGED <<blobs, markers>>
-       ELSE
-         /\ res' = Wrap([status |-> 200, promise |-> PromiseToRecord(p0)])
-         /\ UNCHANGED <<blobs, markers>>
+       \* idempotent by id: no state effect
+       UNCHANGED <<blobs, markers>>
 
 \* P-03 promise.settle (blobfun SettleOnWf + TriggerSettlement; libr8
 \* settle_cascade).
-PromiseSettleAt(origin, req, Wrap(_)) ==
+PromiseSettleResAt(origin, req) ==
+  LET wf == blobs[origin]
+      p0 == GetPromise(wf.promises, req.id) IN
+  IF p0 = NULL THEN
+    [status |-> 404, promise |-> NULL]
+  ELSE IF p0.state = "pending" THEN
+    IF p0.timeoutAt > now
+    THEN [status |-> 200, promise |-> PromiseToRecord(PromiseSettled(p0, req))]
+    ELSE [status |-> 200, promise |-> PromiseToRecord(Projected(p0))]
+  ELSE
+    [status |-> 200, promise |-> PromiseToRecord(p0)]
+
+PromiseSettleAt(origin, req) ==
   LET wf == blobs[origin]
       p0 == GetPromise(wf.promises, req.id) IN
   /\ ShardSwept(wf, now)
-  /\ IF p0 = NULL THEN
-       /\ res' = Wrap([status |-> 404, promise |-> NULL])
-       /\ UNCHANGED <<blobs, markers>>
-     ELSE IF p0.state = "pending" THEN
-       IF p0.timeoutAt > now THEN
-         LET listeners == p0.listeners
-             callbacks == p0.callbacks
-             p == [p0 EXCEPT !.state = req.state, !.value = req.value,
-                             !.settledAt = now,
-                             !.callbacks = {}, !.listeners = {}]
-             t == GetTask(wf.tasks, p.id)
-             scrubbed == [i \in DOMAIN wf.promises |->
-                            IF wf.promises[i].state = "pending"
-                            THEN [wf.promises[i] EXCEPT !.callbacks = @ \ {p.id}]
-                            ELSE wf.promises[i]]
-             promises1 == SetPromise(scrubbed, p)
-             tasks1 == IF t # NULL
-                       THEN SetTask(wf.tasks, [t EXCEPT !.state = "fulfilled", !.pid = NULL,
-                                                        !.ttl = NULL, !.resumes = {}])
-                       ELSE wf.tasks
-             lkeys == {<<p.id, a>> : a \in listeners}
-             unblocked == [k \in DOMAIN wf.outbox \cup lkeys |->
-                             IF k \in lkeys
-                             THEN [address |-> k[2],
-                                   message |-> [type |-> "unblock",
-                                                promise |-> PromiseToRecord(p)]]
-                             ELSE wf.outbox[k]]
-             wfNew == [promises        |-> promises1,
-                       tasks           |-> ResumeTasks(promises1, tasks1, p.id, callbacks, now),
-                       promiseTimeouts |-> DelPromiseTimeout(wf.promiseTimeouts, p.id),
-                       taskTimeouts    |-> ResumeTaskTimeouts(
-                                             promises1,
-                                             IF t # NULL
-                                             THEN DelTaskTimeout(wf.taskTimeouts, t.id)
-                                             ELSE wf.taskTimeouts,
-                                             tasks1, callbacks, now),
-                       outbox          |-> ResumeMessages(unblocked,
-                                                          promises1, tasks1, callbacks, now)]
-         IN /\ blobs' = [blobs EXCEPT ![origin] = wfNew]
-            /\ markers' = ReconcileMarkers(origin, wf, wfNew)
-            /\ res' = Wrap([status |-> 200, promise |-> PromiseToRecord(p)])
-       ELSE
-         LET projected ==
-               IF PromiseIsTimer(p0)
-               THEN [p0 EXCEPT !.state = "resolved", !.settledAt = p0.timeoutAt]
-               ELSE [p0 EXCEPT !.state = "rejected_timedout", !.settledAt = p0.timeoutAt]
-         IN /\ res' = Wrap([status |-> 200, promise |-> PromiseToRecord(projected)])
-            /\ UNCHANGED <<blobs, markers>>
+  /\ IF p0 # NULL /\ p0.state = "pending" /\ p0.timeoutAt > now THEN
+       LET listeners == p0.listeners
+           callbacks == p0.callbacks
+           p == PromiseSettled(p0, req)
+           t == GetTask(wf.tasks, p.id)
+           scrubbed == [i \in DOMAIN wf.promises |->
+                          IF wf.promises[i].state = "pending"
+                          THEN [wf.promises[i] EXCEPT !.callbacks = @ \ {p.id}]
+                          ELSE wf.promises[i]]
+           promises1 == SetPromise(scrubbed, p)
+           tasks1 == IF t # NULL
+                     THEN SetTask(wf.tasks, [t EXCEPT !.state = "fulfilled", !.pid = NULL,
+                                                      !.ttl = NULL, !.resumes = {}])
+                     ELSE wf.tasks
+           lkeys == {<<p.id, a>> : a \in listeners}
+           unblocked == [k \in DOMAIN wf.outbox \cup lkeys |->
+                           IF k \in lkeys
+                           THEN [address |-> k[2],
+                                 message |-> [type |-> "unblock",
+                                              promise |-> PromiseToRecord(p)]]
+                           ELSE wf.outbox[k]]
+           wfNew == [promises        |-> promises1,
+                     tasks           |-> ResumeTasks(promises1, tasks1, p.id, callbacks, now),
+                     promiseTimeouts |-> DelPromiseTimeout(wf.promiseTimeouts, p.id),
+                     taskTimeouts    |-> ResumeTaskTimeouts(
+                                           promises1,
+                                           IF t # NULL
+                                           THEN DelTaskTimeout(wf.taskTimeouts, t.id)
+                                           ELSE wf.taskTimeouts,
+                                           tasks1, callbacks, now),
+                     outbox          |-> ResumeMessages(unblocked,
+                                                        promises1, tasks1, callbacks, now)]
+       IN /\ blobs' = [blobs EXCEPT ![origin] = wfNew]
+          /\ markers' = ReconcileMarkers(origin, wf, wfNew)
      ELSE
-       /\ res' = Wrap([status |-> 200, promise |-> PromiseToRecord(p0)])
-       /\ UNCHANGED <<blobs, markers>>
+       \* missing, already settled, or expired-pending: no state effect
+       UNCHANGED <<blobs, markers>>
 
 \* P-04 promise.register_callback -- same-origin (libr8 validates it; the
 \* awaiter is looked up in the awaited promise's workflow).
@@ -548,12 +559,7 @@ PromiseRegisterCallback(req) ==
             /\ markers' = ReconcileMarkers(origin, wf, wfNew)
             /\ res' = [status |-> 200, promise |-> PromiseToRecord(pAwaited)]
        ELSE
-         LET projected ==
-               IF PromiseIsTimer(pAwaited)
-               THEN [pAwaited EXCEPT !.state = "resolved",
-                                     !.settledAt = pAwaited.timeoutAt]
-               ELSE [pAwaited EXCEPT !.state = "rejected_timedout",
-                                     !.settledAt = pAwaited.timeoutAt]
+         LET projected == Projected(pAwaited)
          IN /\ res' = [status |-> 200, promise |-> PromiseToRecord(projected)]
             /\ UNCHANGED <<blobs, markers>>
      ELSE
@@ -578,12 +584,7 @@ PromiseRegisterListener(req) ==
             /\ markers' = ReconcileMarkers(origin, wf, wfNew)
             /\ res' = [status |-> 200, promise |-> PromiseToRecord(pAwaited)]
        ELSE
-         LET projected ==
-               IF PromiseIsTimer(pAwaited)
-               THEN [pAwaited EXCEPT !.state = "resolved",
-                                     !.settledAt = pAwaited.timeoutAt]
-               ELSE [pAwaited EXCEPT !.state = "rejected_timedout",
-                                     !.settledAt = pAwaited.timeoutAt]
+         LET projected == Projected(pAwaited)
          IN /\ res' = [status |-> 200, promise |-> PromiseToRecord(projected)]
             /\ UNCHANGED <<blobs, markers>>
      ELSE
@@ -627,16 +628,7 @@ TaskCreate(req) ==
          /\ res' = [status |-> 422, task |-> NULL, promise |-> NULL, preload |-> <<>>]
          /\ UNCHANGED <<blobs, markers>>
        ELSE IF a.timeoutAt > now THEN
-         LET p == [id        |-> a.id,
-                   state     |-> "pending",
-                   param     |-> a.param,
-                   value     |-> [headers |-> <<>>, data |-> NULL],
-                   tags      |-> a.tags,
-                   timeoutAt |-> a.timeoutAt,
-                   createdAt |-> now,
-                   settledAt |-> NULL,
-                   callbacks |-> {},
-                   listeners |-> {}]
+         LET p == PromiseCreated(a)
              t == [id |-> p.id, state |-> "acquired", version |-> 1,
                    ttl |-> req.ttl, pid |-> req.pid, resumes |-> {}]
              wfNew == [promises        |-> SetPromise(wf.promises, p),
@@ -651,19 +643,7 @@ TaskCreate(req) ==
             /\ res' = [status |-> 200, task |-> TaskToRecord(t),
                        promise |-> PromiseToRecord(p), preload |-> <<>>]
        ELSE
-         LET st == IF TagsIsTimer(a.tags)
-                   THEN "resolved"
-                   ELSE "rejected_timedout"
-             p  == [id        |-> a.id,
-                    state     |-> st,
-                    param     |-> a.param,
-                    value     |-> [headers |-> <<>>, data |-> NULL],
-                    tags      |-> a.tags,
-                    timeoutAt |-> a.timeoutAt,
-                    createdAt |-> a.timeoutAt,
-                    settledAt |-> a.timeoutAt,
-                    callbacks |-> {},
-                    listeners |-> {}]
+         LET p  == PromiseCreatedExpired(a)
              t  == [id |-> p.id, state |-> "fulfilled", version |-> 0,
                     ttl |-> NULL, pid |-> NULL, resumes |-> {}]
              wfNew == [wf EXCEPT !.promises = SetPromise(@, p),
@@ -738,7 +718,9 @@ TaskAcquire(req) ==
 
 \* T-04 task.fence -- the inner action runs against the FENCE task's
 \* workflow (blobfun applies CreateOnWf/SettleOnWf to the fence's shard;
-\* same-origin makes that the inner id's shard too).
+\* same-origin makes that the inner id's shard too). Composition by
+\* conjunction: inner state effects /\ the fence response embedding the
+\* inner response function.
 TaskFence(req) ==
   LET origin == OriginOf(req.id)
       wf == blobs[origin]
@@ -762,13 +744,17 @@ TaskFence(req) ==
        /\ res' = [status |-> 409, action |-> NULL, preload |-> <<>>]
        /\ UNCHANGED <<blobs, markers>>
      ELSE IF req.action.type = "create" THEN
-       PromiseCreateAt(origin, req.action.req,
-         LAMBDA r : [status |-> 200, action |-> [type |-> "create", res |-> r],
-                     preload |-> <<>>])
+       /\ PromiseCreateAt(origin, req.action.req)
+       /\ res' = [status |-> 200,
+                  action |-> [type |-> "create",
+                              res |-> PromiseCreateResAt(origin, req.action.req)],
+                  preload |-> <<>>]
      ELSE
-       PromiseSettleAt(origin, req.action.req,
-         LAMBDA r : [status |-> 200, action |-> [type |-> "settle", res |-> r],
-                     preload |-> <<>>])
+       /\ PromiseSettleAt(origin, req.action.req)
+       /\ res' = [status |-> 200,
+                  action |-> [type |-> "settle",
+                              res |-> PromiseSettleResAt(origin, req.action.req)],
+                  preload |-> <<>>]
 
 \* T-05 task.heartbeat -- routed by the FIRST ref's origin; a worker
 \* heartbeats per shard (same-origin). Empty list: unroutable, pure no-op.
@@ -889,9 +875,7 @@ TaskFulfill(req) ==
      ELSE
        LET listeners == p0.listeners
            callbacks == p0.callbacks
-           p == [p0 EXCEPT !.state = req.action.state, !.value = req.action.value,
-                           !.settledAt = now,
-                           !.callbacks = {}, !.listeners = {}]
+           p == PromiseSettled(p0, req.action)
            scrubbed == [i \in DOMAIN wf.promises |->
                           IF wf.promises[i].state = "pending"
                           THEN [wf.promises[i] EXCEPT !.callbacks = @ \ {p.id}]
@@ -1093,11 +1077,15 @@ PromiseGetAction ==
 
 PromiseCreateAction ==
   \E req \in PromiseCreateReqs :
-    PromiseCreateAt(OriginOf(req.id), req, LAMBDA r : r) /\ UNCHANGED now
+    /\ PromiseCreateAt(OriginOf(req.id), req)
+    /\ res' = PromiseCreateResAt(OriginOf(req.id), req)
+    /\ UNCHANGED now
 
 PromiseSettleAction ==
   \E req \in PromiseSettleReqs :
-    PromiseSettleAt(OriginOf(req.id), req, LAMBDA r : r) /\ UNCHANGED now
+    /\ PromiseSettleAt(OriginOf(req.id), req)
+    /\ res' = PromiseSettleResAt(OriginOf(req.id), req)
+    /\ UNCHANGED now
 
 PromiseRegisterCallbackAction ==
   \E req \in RegisterCallbackReqs :
@@ -1254,16 +1242,27 @@ View == <<blobs, markers, now>>
 (* projection branches dead, so blob's post-sweep bodies coincide with the  *)
 (* abstract ones).                                                          *)
 
-Merge(field(_)) ==
-  LET dom == UNION {DOMAIN field(blobs[o]) : o \in Origins}
-  IN [k \in dom |-> field(blobs[CHOOSE o \in Origins :
-                                  k \in DOMAIN field(blobs[o])])[k]]
+\* Union the shards: an object (or outbox key, whose first component is
+\* always an id) lives in the blob its id routes to (ShardIntegrity).
+AbsPromises ==
+  [id \in UNION {DOMAIN blobs[o].promises : o \in Origins} |->
+     blobs[OriginOf(id)].promises[id]]
 
-AbsPromises        == Merge(LAMBDA wf : wf.promises)
-AbsTasks           == Merge(LAMBDA wf : wf.tasks)
-AbsPromiseTimeouts == Merge(LAMBDA wf : wf.promiseTimeouts)
-AbsTaskTimeouts    == Merge(LAMBDA wf : wf.taskTimeouts)
-AbsOutbox          == Merge(LAMBDA wf : wf.outbox)
+AbsTasks ==
+  [id \in UNION {DOMAIN blobs[o].tasks : o \in Origins} |->
+     blobs[OriginOf(id)].tasks[id]]
+
+AbsPromiseTimeouts ==
+  [id \in UNION {DOMAIN blobs[o].promiseTimeouts : o \in Origins} |->
+     blobs[OriginOf(id)].promiseTimeouts[id]]
+
+AbsTaskTimeouts ==
+  [k \in UNION {DOMAIN blobs[o].taskTimeouts : o \in Origins} |->
+     blobs[OriginOf(k[1])].taskTimeouts[k]]
+
+AbsOutbox ==
+  [k \in UNION {DOMAIN blobs[o].outbox : o \in Origins} |->
+     blobs[OriginOf(k[1])].outbox[k]]
 
 \* The default routing: every id lives in the one workflow. TwoOriginMap
 \* splits p1 from the rest (see BlobTwoOrigins.cfg).

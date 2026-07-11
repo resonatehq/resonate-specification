@@ -157,12 +157,14 @@ OutboxKey(e) ==
   THEN <<e.message.taskId>>
   ELSE <<e.message.promise.id, e.address>>
 
-GetPromise(ps, id) == IF id \in DOMAIN ps THEN ps[id] ELSE NULL
+GetPromise(ps, id) ==
+  IF id \in DOMAIN ps THEN ps[id] ELSE NULL
 
 SetPromise(ps, p) ==
   [id \in DOMAIN ps \cup {p.id} |-> IF id = p.id THEN p ELSE ps[id]]
 
-GetTask(ts, id) == IF id \in DOMAIN ts THEN ts[id] ELSE NULL
+GetTask(ts, id) ==
+  IF id \in DOMAIN ts THEN ts[id] ELSE NULL
 
 SetTask(ts, t) ==
   [id \in DOMAIN ts \cup {t.id} |-> IF id = t.id THEN t ELSE ts[id]]
@@ -170,18 +172,57 @@ SetTask(ts, t) ==
 SetPromiseTimeout(pts, id, timeout) ==
   [x \in DOMAIN pts \cup {id} |-> IF x = id THEN timeout ELSE pts[x]]
 
-DelPromiseTimeout(pts, id) == [x \in DOMAIN pts \ {id} |-> pts[x]]
+DelPromiseTimeout(pts, id) ==
+  [x \in DOMAIN pts \ {id} |-> pts[x]]
 
 SetTaskTimeout(tts, id, kind, timeout) ==
   [k \in DOMAIN tts \cup {<<id, kind>>} |->
      IF k = <<id, kind>> THEN timeout ELSE tts[k]]
 
-DelTaskTimeout(tts, id) == [k \in {x \in DOMAIN tts : x[1] # id} |-> tts[k]]
+DelTaskTimeout(tts, id) ==
+  [k \in {x \in DOMAIN tts : x[1] # id} |-> tts[k]]
 
 SetMessage(ob, address, msg) ==
   LET entry == [address |-> address, message |-> msg]
       key   == OutboxKey(entry)
   IN [k \in DOMAIN ob \cup {key} |-> IF k = key THEN entry ELSE ob[k]]
+
+\* The promise a live create stores (P-02/T-02, timeoutAt > now) ...
+PromiseCreated(req) ==
+  [id        |-> req.id,
+   state     |-> "pending",
+   param     |-> req.param,
+   value     |-> [headers |-> <<>>, data |-> NULL],
+   tags      |-> req.tags,
+   timeoutAt |-> req.timeoutAt,
+   createdAt |-> now,
+   settledAt |-> NULL,
+   callbacks |-> {},
+   listeners |-> {}]
+
+\* ... and the promise an expired create stores, settled at birth.
+PromiseCreatedExpired(req) ==
+  [id        |-> req.id,
+   state     |-> IF TagsIsTimer(req.tags) THEN "resolved" ELSE "rejected_timedout",
+   param     |-> req.param,
+   value     |-> [headers |-> <<>>, data |-> NULL],
+   tags      |-> req.tags,
+   timeoutAt |-> req.timeoutAt,
+   createdAt |-> req.timeoutAt,
+   settledAt |-> req.timeoutAt,
+   callbacks |-> {},
+   listeners |-> {}]
+
+\* A settled promise (P-03/T-07): terminal state, subscriptions cleared.
+PromiseSettled(p, req) ==
+  [p EXCEPT !.state = req.state, !.value = req.value, !.settledAt = now,
+            !.callbacks = {}, !.listeners = {}]
+
+\* A pending promise past its deadline, as observed (the projection).
+Projected(p) ==
+  IF PromiseIsTimer(p)
+  THEN [p EXCEPT !.state = "resolved", !.settledAt = p.timeoutAt]
+  ELSE [p EXCEPT !.state = "rejected_timedout", !.settledAt = p.timeoutAt]
 
 -----------------------------------------------------------------------------
 (* 02-actions/00-resume.lean                                                *)
@@ -359,10 +400,7 @@ PromiseGet(req) ==
        res' = [status |-> 404, promise |-> NULL]
      ELSE IF p.state = "pending" THEN
        IF p.timeoutAt <= now THEN
-         LET projected ==
-               IF PromiseIsTimer(p)
-               THEN [p EXCEPT !.state = "resolved", !.settledAt = p.timeoutAt]
-               ELSE [p EXCEPT !.state = "rejected_timedout", !.settledAt = p.timeoutAt]
+         LET projected == Projected(p)
          IN res' = [status |-> 200, promise |-> PromiseToRecord(projected)]
        ELSE
          res' = [status |-> 200, promise |-> PromiseToRecord(p)]
@@ -374,31 +412,32 @@ PromiseGet(req) ==
 (* 02-actions/P-02-promise.create.lean                                      *)
 (* Divergence: Lean parses the "resonate:delay" tag value with toNat!; here *)
 (* the delay tag value is already a Nat.                                    *)
-(* Wrap is the caller's response continuation (Lean returns the response    *)
-(* to the caller; task.fence wraps it): plain calls pass LAMBDA r : r.      *)
+(* The action constrains the server variables; the RESPONSE is a state      *)
+(* function of the pre-state, so task.fence can embed it in its own         *)
+(* response by plain conjunction (the TLA+ rendering of Lean's bind).       *)
 
-PromiseCreate(req, Wrap(_)) ==
+PromiseCreateRes(req) ==
+  LET p0 == GetPromise(promises, req.id) IN
+  IF p0 = NULL THEN
+    IF req.timeoutAt > now
+    THEN [status |-> 200, promise |-> PromiseToRecord(PromiseCreated(req))]
+    ELSE [status |-> 200, promise |-> PromiseToRecord(PromiseCreatedExpired(req))]
+  ELSE IF p0.state = "pending" /\ p0.timeoutAt <= now
+  THEN [status |-> 200, promise |-> PromiseToRecord(Projected(p0))]
+  ELSE [status |-> 200, promise |-> PromiseToRecord(p0)]
+
+PromiseCreate(req) ==
   LET retryTimeout == config.retryTimeout
       p0 == GetPromise(promises, req.id) IN
   IF p0 = NULL THEN
     IF req.timeoutAt > now THEN
-      LET p == [id        |-> req.id,
-                state     |-> "pending",
-                param     |-> req.param,
-                value     |-> [headers |-> <<>>, data |-> NULL],
-                tags      |-> req.tags,
-                timeoutAt |-> req.timeoutAt,
-                createdAt |-> now,
-                settledAt |-> NULL,
-                callbacks |-> {},
-                listeners |-> {}]
+      LET p == PromiseCreated(req)
           target == TagsGet(p.tags, "resonate:target")
       IN
       /\ promises' = SetPromise(promises, p)
       /\ promiseTimeouts' = IF PromiseExternal(p)
                             THEN SetPromiseTimeout(promiseTimeouts, p.id, p.timeoutAt)
                             ELSE promiseTimeouts
-      /\ res' = Wrap([status |-> 200, promise |-> PromiseToRecord(p)])
       /\ IF target = NULL THEN
            UNCHANGED <<tasks, taskTimeouts, outbox>>
          ELSE
@@ -419,22 +458,9 @@ PromiseCreate(req, Wrap(_)) ==
                 /\ outbox' = SetMessage(outbox, target,
                                [type |-> "execute", taskId |-> t.id, version |-> t.version])
     ELSE
-      LET st == IF TagsIsTimer(req.tags)
-                THEN "resolved"
-                ELSE "rejected_timedout"
-          p  == [id        |-> req.id,
-                 state     |-> st,
-                 param     |-> req.param,
-                 value     |-> [headers |-> <<>>, data |-> NULL],
-                 tags      |-> req.tags,
-                 timeoutAt |-> req.timeoutAt,
-                 createdAt |-> req.timeoutAt,
-                 settledAt |-> req.timeoutAt,
-                 callbacks |-> {},
-                 listeners |-> {}]
+      LET p == PromiseCreatedExpired(req)
       IN
       /\ promises' = SetPromise(promises, p)
-      /\ res' = Wrap([status |-> 200, promise |-> PromiseToRecord(p)])
       /\ IF TagsHas(p.tags, "resonate:target") THEN
            LET t == [id |-> p.id, state |-> "fulfilled", version |-> 0,
                      ttl |-> NULL, pid |-> NULL, resumes |-> {}]
@@ -443,71 +469,62 @@ PromiseCreate(req, Wrap(_)) ==
            UNCHANGED tasks
       /\ UNCHANGED <<promiseTimeouts, taskTimeouts, outbox>>
   ELSE
-    IF p0.state = "pending" /\ p0.timeoutAt <= now THEN
-      LET projected ==
-            IF PromiseIsTimer(p0)
-            THEN [p0 EXCEPT !.state = "resolved", !.settledAt = p0.timeoutAt]
-            ELSE [p0 EXCEPT !.state = "rejected_timedout", !.settledAt = p0.timeoutAt]
-      IN /\ res' = Wrap([status |-> 200, promise |-> PromiseToRecord(projected)])
-         /\ UNCHANGED serverVars
-    ELSE
-      /\ res' = Wrap([status |-> 200, promise |-> PromiseToRecord(p0)])
-      /\ UNCHANGED serverVars
+    \* idempotent by id: no state effect
+    UNCHANGED serverVars
 
 -----------------------------------------------------------------------------
 (* 02-actions/P-03-promise.settle.lean                                      *)
 
-PromiseSettle(req, Wrap(_)) ==
+PromiseSettleRes(req) ==
   LET p0 == GetPromise(promises, req.id) IN
   IF p0 = NULL THEN
-    /\ res' = Wrap([status |-> 404, promise |-> NULL])
-    /\ UNCHANGED serverVars
+    [status |-> 404, promise |-> NULL]
   ELSE IF p0.state = "pending" THEN
-    IF p0.timeoutAt > now THEN
-      LET listeners == p0.listeners
-          callbacks == p0.callbacks
-          p == [p0 EXCEPT !.state = req.state, !.value = req.value,
-                          !.settledAt = now,
-                          !.callbacks = {}, !.listeners = {}]
-          t == GetTask(tasks, p.id)
-          \* settlement scrub: p can never be resumed again; drop its dead registrations
-          scrubbed == [i \in DOMAIN promises |->
-                         IF promises[i].state = "pending"
-                         THEN [promises[i] EXCEPT !.callbacks = @ \ {p.id}]
-                         ELSE promises[i]]
-          promises1 == SetPromise(scrubbed, p)
-          tasks1 == IF t # NULL
-                    THEN SetTask(tasks, [t EXCEPT !.state = "fulfilled", !.pid = NULL,
-                                                  !.ttl = NULL, !.resumes = {}])
-                    ELSE tasks
-          lkeys == {<<p.id, a>> : a \in listeners}
-          unblocked == [k \in DOMAIN outbox \cup lkeys |->
-                          IF k \in lkeys
-                          THEN [address |-> k[2],
-                                message |-> [type |-> "unblock",
-                                             promise |-> PromiseToRecord(p)]]
-                          ELSE outbox[k]]
-      IN /\ promises' = promises1
-         /\ promiseTimeouts' = DelPromiseTimeout(promiseTimeouts, p.id)
-         /\ tasks' = ResumeTasks(promises1, tasks1, p.id, callbacks, now)
-         /\ taskTimeouts' = ResumeTaskTimeouts(
-                              promises1,
-                              IF t # NULL
-                              THEN DelTaskTimeout(taskTimeouts, t.id)
-                              ELSE taskTimeouts,
-                              tasks1, callbacks, now)
-         /\ outbox' = ResumeMessages(unblocked, promises1, tasks1, callbacks, now)
-         /\ res' = Wrap([status |-> 200, promise |-> PromiseToRecord(p)])
-    ELSE
-      LET projected ==
-            IF PromiseIsTimer(p0)
-            THEN [p0 EXCEPT !.state = "resolved", !.settledAt = p0.timeoutAt]
-            ELSE [p0 EXCEPT !.state = "rejected_timedout", !.settledAt = p0.timeoutAt]
-      IN /\ res' = Wrap([status |-> 200, promise |-> PromiseToRecord(projected)])
-         /\ UNCHANGED serverVars
+    IF p0.timeoutAt > now
+    THEN [status |-> 200, promise |-> PromiseToRecord(PromiseSettled(p0, req))]
+    ELSE [status |-> 200, promise |-> PromiseToRecord(Projected(p0))]
   ELSE
-    /\ res' = Wrap([status |-> 200, promise |-> PromiseToRecord(p0)])
-    /\ UNCHANGED serverVars
+    [status |-> 200, promise |-> PromiseToRecord(p0)]
+
+PromiseSettle(req) ==
+  LET p0 == GetPromise(promises, req.id) IN
+  IF p0 = NULL THEN
+    UNCHANGED serverVars
+  ELSE IF p0.state = "pending" /\ p0.timeoutAt > now THEN
+    LET listeners == p0.listeners
+        callbacks == p0.callbacks
+        p == PromiseSettled(p0, req)
+        t == GetTask(tasks, p.id)
+        \* settlement scrub: p can never be resumed again; drop its dead registrations
+        scrubbed == [i \in DOMAIN promises |->
+                       IF promises[i].state = "pending"
+                       THEN [promises[i] EXCEPT !.callbacks = @ \ {p.id}]
+                       ELSE promises[i]]
+        promises1 == SetPromise(scrubbed, p)
+        tasks1 == IF t # NULL
+                  THEN SetTask(tasks, [t EXCEPT !.state = "fulfilled", !.pid = NULL,
+                                                !.ttl = NULL, !.resumes = {}])
+                  ELSE tasks
+        lkeys == {<<p.id, a>> : a \in listeners}
+        unblocked == [k \in DOMAIN outbox \cup lkeys |->
+                        IF k \in lkeys
+                        THEN [address |-> k[2],
+                              message |-> [type |-> "unblock",
+                                           promise |-> PromiseToRecord(p)]]
+                        ELSE outbox[k]]
+    IN /\ promises' = promises1
+       /\ promiseTimeouts' = DelPromiseTimeout(promiseTimeouts, p.id)
+       /\ tasks' = ResumeTasks(promises1, tasks1, p.id, callbacks, now)
+       /\ taskTimeouts' = ResumeTaskTimeouts(
+                            promises1,
+                            IF t # NULL
+                            THEN DelTaskTimeout(taskTimeouts, t.id)
+                            ELSE taskTimeouts,
+                            tasks1, callbacks, now)
+       /\ outbox' = ResumeMessages(unblocked, promises1, tasks1, callbacks, now)
+  ELSE
+    \* already settled, or expired-pending (write-once; projection only)
+    UNCHANGED serverVars
 
 -----------------------------------------------------------------------------
 (* 02-actions/P-04-promise.register_callback.lean                           *)
@@ -538,12 +555,7 @@ PromiseRegisterCallback(req) ==
       /\ res' = [status |-> 200, promise |-> PromiseToRecord(pAwaited)]
       /\ UNCHANGED <<tasks, promiseTimeouts, taskTimeouts, outbox>>
     ELSE
-      LET projected ==
-            IF PromiseIsTimer(pAwaited)
-            THEN [pAwaited EXCEPT !.state = "resolved",
-                                  !.settledAt = pAwaited.timeoutAt]
-            ELSE [pAwaited EXCEPT !.state = "rejected_timedout",
-                                  !.settledAt = pAwaited.timeoutAt]
+      LET projected == Projected(pAwaited)
       IN /\ res' = [status |-> 200, promise |-> PromiseToRecord(projected)]
          /\ UNCHANGED serverVars
   ELSE
@@ -564,12 +576,7 @@ PromiseRegisterListener(req) ==
       /\ res' = [status |-> 200, promise |-> PromiseToRecord(pAwaited)]
       /\ UNCHANGED <<tasks, promiseTimeouts, taskTimeouts, outbox>>
     ELSE
-      LET projected ==
-            IF PromiseIsTimer(pAwaited)
-            THEN [pAwaited EXCEPT !.state = "resolved",
-                                  !.settledAt = pAwaited.timeoutAt]
-            ELSE [pAwaited EXCEPT !.state = "rejected_timedout",
-                                  !.settledAt = pAwaited.timeoutAt]
+      LET projected == Projected(pAwaited)
       IN /\ res' = [status |-> 200, promise |-> PromiseToRecord(projected)]
          /\ UNCHANGED serverVars
   ELSE
@@ -615,16 +622,7 @@ TaskCreate(req) ==
       /\ res' = [status |-> 422, task |-> NULL, promise |-> NULL, preload |-> <<>>]
       /\ UNCHANGED serverVars
     ELSE IF a.timeoutAt > now THEN
-      LET p == [id        |-> a.id,
-                state     |-> "pending",
-                param     |-> a.param,
-                value     |-> [headers |-> <<>>, data |-> NULL],
-                tags      |-> a.tags,
-                timeoutAt |-> a.timeoutAt,
-                createdAt |-> now,
-                settledAt |-> NULL,
-                callbacks |-> {},
-                listeners |-> {}]
+      LET p == PromiseCreated(a)
           t == [id |-> p.id, state |-> "acquired", version |-> 1,
                 ttl |-> req.ttl, pid |-> req.pid, resumes |-> {}]
       IN
@@ -636,19 +634,7 @@ TaskCreate(req) ==
                  promise |-> PromiseToRecord(p), preload |-> <<>>]
       /\ UNCHANGED outbox
     ELSE
-      LET st == IF TagsIsTimer(a.tags)
-                THEN "resolved"
-                ELSE "rejected_timedout"
-          p  == [id        |-> a.id,
-                 state     |-> st,
-                 param     |-> a.param,
-                 value     |-> [headers |-> <<>>, data |-> NULL],
-                 tags      |-> a.tags,
-                 timeoutAt |-> a.timeoutAt,
-                 createdAt |-> a.timeoutAt,
-                 settledAt |-> a.timeoutAt,
-                 callbacks |-> {},
-                 listeners |-> {}]
+      LET p  == PromiseCreatedExpired(a)
           t  == [id |-> p.id, state |-> "fulfilled", version |-> 0,
                  ttl |-> NULL, pid |-> NULL, resumes |-> {}]
       IN
@@ -718,8 +704,8 @@ TaskAcquire(req) ==
 
 -----------------------------------------------------------------------------
 (* 02-actions/T-04-task.fence.lean                                          *)
-(* Lean binds the inner handler's response and wraps it; here the wrapper   *)
-(* is passed to the inner handler as its response continuation.             *)
+(* Composition the TLA+ way: conjoin the inner action's state effects with  *)
+(* the fence's own response, which embeds the inner response function.      *)
 
 TaskFence(req) ==
   LET t == GetTask(tasks, req.id) IN
@@ -741,13 +727,15 @@ TaskFence(req) ==
     /\ res' = [status |-> 409, action |-> NULL, preload |-> <<>>]
     /\ UNCHANGED serverVars
   ELSE IF req.action.type = "create" THEN
-    PromiseCreate(req.action.req,
-      LAMBDA r : [status |-> 200, action |-> [type |-> "create", res |-> r],
-                  preload |-> <<>>])
+    /\ PromiseCreate(req.action.req)
+    /\ res' = [status |-> 200,
+               action |-> [type |-> "create", res |-> PromiseCreateRes(req.action.req)],
+               preload |-> <<>>]
   ELSE
-    PromiseSettle(req.action.req,
-      LAMBDA r : [status |-> 200, action |-> [type |-> "settle", res |-> r],
-                  preload |-> <<>>])
+    /\ PromiseSettle(req.action.req)
+    /\ res' = [status |-> 200,
+               action |-> [type |-> "settle", res |-> PromiseSettleRes(req.action.req)],
+               preload |-> <<>>]
 
 -----------------------------------------------------------------------------
 (* 02-actions/T-05-task.heartbeat.lean                                      *)
@@ -857,9 +845,7 @@ TaskFulfill(req) ==
   ELSE
     LET listeners == p0.listeners
         callbacks == p0.callbacks
-        p == [p0 EXCEPT !.state = req.action.state, !.value = req.action.value,
-                        !.settledAt = now,
-                        !.callbacks = {}, !.listeners = {}]
+        p == PromiseSettled(p0, req.action)
         \* settlement scrub: p can never be resumed again; drop its dead registrations
         scrubbed == [i \in DOMAIN promises |->
                        IF promises[i].state = "pending"
@@ -1055,11 +1041,15 @@ PromiseGetAction ==
 
 PromiseCreateAction ==
   \E req \in PromiseCreateReqs :
-    PromiseCreate(req, LAMBDA r : r) /\ UNCHANGED now
+    /\ PromiseCreate(req)
+    /\ res' = PromiseCreateRes(req)
+    /\ UNCHANGED now
 
 PromiseSettleAction ==
   \E req \in PromiseSettleReqs :
-    PromiseSettle(req, LAMBDA r : r) /\ UNCHANGED now
+    /\ PromiseSettle(req)
+    /\ res' = PromiseSettleRes(req)
+    /\ UNCHANGED now
 
 PromiseRegisterCallbackAction ==
   \E req \in RegisterCallbackReqs :
