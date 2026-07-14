@@ -1,0 +1,131 @@
+*** ===========================================================================
+*** trace-check.maude -- conformance checking of implementation traces
+*** against the Resonate abstract machine (resonate.maude).
+***
+*** A trace is the implementation's BOUNDARY LOG -- three event kinds, one
+*** per thing that crossed the observable edge:
+***
+***   req(T, M)        at time T the client sent request M. M carries its
+***                    correlation id as the reply-to (from = corr), so the
+***                    machine will answer resp(corr, ...). INJECTION ONLY --
+***                    it does NOT block, so a later req can be injected before
+***                    an earlier one's response arrives. The script order IS
+***                    the logged interleaving.
+***   res(C, S)        the reply for corr C carried status S (view free).
+***   resV(C, S, VW)   ... and carried exactly view VW.
+***   msg(M)           the implementation emitted outbox message M (an execute
+***                    or unblock) by this point in the log.
+***
+*** Only req carries a time: it is the sole INPUT (the client chooses when to
+*** send). res/resV/msg are OUTPUTS -- the machine decides when they happen and
+*** the search reconstructs that timing; a response is produced atomically with
+*** its request, so it needs no time of its own.
+***
+*** The Driver replays the script in order. A req fires when the clock reaches
+*** its time; a res/resV discharges when a matching resp for that corr is in
+*** the soup; a msg discharges when its emission is in the soup. Internal
+*** transitions -- ticks, timeout firings, resume deliveries -- stay
+*** nondeterministic, so search explores every interleaving.
+***
+***   CONFORMANT      iff  search finds a state with script: nilE
+***   NON-CONFORMANT  iff  No solution: no interleaving of the machine's
+***                        internal transitions reproduces the log
+***
+*** Run:  maude resonate.maude trace-check.maude
+*** ===========================================================================
+
+mod TRACE-CHECK is
+  including RESONATE .
+
+  sort DEvent DEventList .
+  subsort DEvent < DEventList .
+  op nilE : -> DEventList [ctor] .
+  op _::_ : DEvent DEventList -> DEventList [ctor] .
+
+  op req  : Nat Msg -> DEvent [ctor] .        *** time, request (from = corr)
+  op res  : Oid Nat -> DEvent [ctor] .        *** corr, status (view free)
+  op resV : Oid Nat View -> DEvent [ctor] .   *** corr, status, exact view
+  op msg  : Msg -> DEvent [ctor] .            *** observed outbox emission
+
+  op Driver : -> Cid [ctor] .
+  op driver : -> Oid [ctor] .
+  op script:_ : DEventList -> Attribute [ctor gather (&)] .
+
+  var M : Msg .   var EL : DEventList .   var S T : Nat .   var VW : View .
+  var C : Oid .   var AS : AttributeSet .
+
+  *** inject the request at its logged time (from = corr is inside M, so the
+  *** machine will reply resp(corr, ...)). Non-blocking: the script advances,
+  *** so the next req can be injected before this one is answered.
+  rl [drive-req] :
+     < driver : Driver | script: (req(T, M) :: EL) >
+     < clock : Clock | now: T, AS >
+  => < driver : Driver | script: EL >
+     < clock : Clock | now: T, AS >
+     M .
+
+  *** discharge the outstanding response for corr C -- a mismatched corr or
+  *** status never matches, so that branch of the search sticks (as intended)
+  rl [drive-res] :
+     resp(C, S, VW)
+     < driver : Driver | script: (res(C, S) :: EL) >
+  => < driver : Driver | script: EL > .
+
+  rl [drive-resV] :
+     resp(C, S, VW)
+     < driver : Driver | script: (resV(C, S, VW) :: EL) >
+  => < driver : Driver | script: EL > .
+
+  *** the logged emission must actually be in the soup. NON-CONSUMING:
+  *** emissions are at-least-once evidence -- the machine emits each content
+  *** once (keyed dedup), an implementation may re-send it any number of
+  *** times, and every msg() in the log discharges against the same emission
+  rl [drive-msg] :
+     M
+     < driver : Driver | script: (msg(M) :: EL) >
+  => M
+     < driver : Driver | script: EL > .
+
+endm
+
+*** ===========================================================================
+*** Demo: two logs of the timeout-vs-resume race (raceBase: awaiter 'b,
+*** deadline 5, task suspended on 'a). Both settle 'a, then show the worker
+*** woken with execute('w, 'b, 2). corr 'c0 is the settle's reply-to.
+*** ===========================================================================
+
+mod TRACE-DEMO is
+  including TRACE-CHECK .
+  including RESONATE-RACE .   *** for raceBase
+
+  *** log 1: settle at t=1 -- wake races the deadline and can win: CONFORMANT
+  op traceOk : -> Configuration .
+  eq traceOk = raceBase
+    < driver : Driver | script:
+        ( req(1, promSettle('c0, 'a, resolved, vA))
+       :: res('c0, 200)
+       :: msg(execute('w, 'b, 2))
+       :: nilE ) > .
+
+  *** log 2: settle at t=6, AFTER 'b's deadline -- yet the implementation
+  *** still woke the worker. This is the unguarded cascadeSettle behavior
+  *** that 00-resume.lean outlaws (TIMEOUT ALWAYS WINS): NON-CONFORMANT
+  op traceBad : -> Configuration .
+  eq traceBad = raceBase
+    < driver : Driver | script:
+        ( req(6, promSettle('c0, 'a, resolved, vA))
+       :: res('c0, 200)
+       :: msg(execute('w, 'b, 2))
+       :: nilE ) > .
+
+endm
+
+*** 1. expect a solution: the machine can reproduce this log
+search [1] in TRACE-DEMO : traceOk =>*
+  C:Configuration < driver : Driver | script: nilE > .
+
+*** 2. expect NO solution: no interleaving of the machine's internal
+***    transitions wakes 'b after its deadline -- the log is not a behavior
+***    of the spec, so the implementation that produced it has the bug
+search [1] in TRACE-DEMO : traceBad =>*
+  C:Configuration < driver : Driver | script: nilE > .

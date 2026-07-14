@@ -1,0 +1,1229 @@
+*** ===========================================================================
+*** resonate.maude -- the Resonate abstract machine as an object-based Maude
+*** rewrite theory. Translated from the Lean 4 specification (spec/).
+***
+*** The configuration is a soup of
+***   objects   : < id : Promise | ... >  < id : Task | ... >  < id : Sched | ... >
+***               plus the singletons < clock : Clock | ... > < reg : Registry | ... >
+***   messages  : requests, responses, and the outbox/internal traffic --
+***               execute, unblock, resume -- floating until consumed.
+***
+*** This is the ENVELOPE machine: the most permissive machine that respects
+*** the protocol's invariants. Lean (synchronous chain, settle-time guards,
+*** timed retries) refines it; so does every SDK. Trace conformance against
+*** this model answers "is this log allowed at all".
+***
+*** Deliberate deviations from the Lean model (each marked at its rule):
+***
+***  1. LAZY RELEASE. Settlement -- promise.settle, task.fulfill, fence
+***     settle, promise timeout -- is a PURE STATE CHANGE: the settled
+***     promise KEEPS its callbacks and listeners. The [release-*] rules
+***     discharge them one at a time, at any later moment; every subset of
+***     "already discharged" arises from interleaving. Release IS delivery:
+***     a callback release applies 00-resume.lean directly to the awaiter --
+***     there is no in-flight resume message, since an arbitrary release time
+***     plus network delay is just an arbitrary time -- with TIMEOUT ALWAYS
+***     WINS evaluated at release time. This admits every implementation's
+***     cascade strategy -- immediate, delayed, partial, crash-and-
+***     redispatch -- as schedules of one machine, and it subsumes Lean's
+***     settlement scrub: a dead registration is dropped at release.
+***
+***  2. TIMEOUTS FROM THE FIELDS. No timer objects, no alarm slots. A
+***     timeout rule is enabled directly by the object's own state --
+***     promise: pending /\ timeoutAt <= now, armed iff it has a task or is
+***     external (exactly Lean's setPromiseTimeout sites); task lease: the
+***     lease: deadline stamped at acquire/heartbeat. The RETRY TIMER IS NOT
+***     MODELED: an emitted execute persists in the soup (keyed dedup), so
+***     any re-send schedule is trivially conformant -- trace checking reads
+***     logged emissions as at-least-once evidence. A delayed start via the
+***     resonate:delay tag is the one dispatch the machine still owes:
+***     notBefore: on the task, fired once by [task-dispatch].
+***
+***  3. ELISIONS. search endpoints (501), preload fields, record payloads in
+***     responses (a response carries status + projected state only),
+***     heartbeat with one task ref, suspend with <= 2 awaited promises,
+***     fence-settle-own-promise (use task.fulfill), and cron --
+***     a Sched fires every `period`; catch-up = one occurrence per rewrite.
+***     Self-await is REJECTED (422), mirroring the Lean spec; registration
+***     is otherwise idempotent (IdSet dedup = Lean's addCallback dedup).
+***     Lean's 422 for duplicate ids WITHIN one suspend payload is
+***     unrepresentable here (the payload is an idempotent IdSet).
+***
+*** Run:  maude resonate.maude   (the demo searches at the bottom execute)
+*** ===========================================================================
+
+mod RESONATE is
+  protecting NAT .
+  protecting QID .
+  including CONFIGURATION .
+
+  subsort Qid < Oid .
+
+  *** -------------------------------------------------------------------------
+  *** data -- spec/01-objects/types.lean
+  *** -------------------------------------------------------------------------
+
+  sort PromiseState .
+  ops pending resolved rejected rejectedCanceled rejectedTimedout : -> PromiseState [ctor] .
+
+  sort TaskState .
+  ops tPending tAcquired tSuspended tHalted tFulfilled : -> TaskState [ctor] .
+
+  sort Value .
+  ops noValue vA vB vC : -> Value [ctor] .
+
+  sort OptNat . subsort Nat < OptNat .
+  op noNat : -> OptNat [ctor] .
+
+  sort OptOid . subsort Oid < OptOid .
+  op noOid : -> OptOid [ctor] .
+
+  *** id sets (callbacks, listeners, resumes, registry) -- idempotent, so
+  *** addCallback/resumes dedup (Lean's contains-checks) hold by equation
+  sort IdSet . subsort Oid < IdSet .
+  op mtIds : -> IdSet [ctor] .
+  op _;_ : IdSet IdSet -> IdSet [ctor assoc comm id: mtIds] .
+  eq I:Oid ; I:Oid = I:Oid .
+
+  op _in_ : Oid IdSet -> Bool .
+  eq I:Oid in (I:Oid ; IS:IdSet) = true .
+  eq I:Oid in IS:IdSet = false [owise] .
+
+  op removeId : Oid IdSet -> IdSet .
+  eq removeId(I:Oid, (I:Oid ; IS:IdSet)) = IS:IdSet .
+  eq removeId(I:Oid, IS:IdSet) = IS:IdSet [owise] .
+
+  op addIf : Bool Oid IdSet -> IdSet .
+  eq addIf(true, I:Oid, IS:IdSet) = I:Oid ; IS:IdSet .
+  eq addIf(false, I:Oid, IS:IdSet) = IS:IdSet .
+
+  *** tags -- only the three tags the machine inspects, as an algebraic set
+  sort Tag TagSet . subsort Tag < TagSet .
+  op noTags : -> TagSet [ctor] .
+  op _;_ : TagSet TagSet -> TagSet [ctor assoc comm id: noTags] .
+  op timer : -> Tag [ctor] .            *** "resonate:timer"
+  op target : Oid -> Tag [ctor] .       *** "resonate:target"
+  op delay : Nat -> Tag [ctor] .        *** "resonate:delay"
+
+  op isTimer : TagSet -> Bool .
+  eq isTimer(timer ; TG:TagSet) = true .
+  eq isTimer(TG:TagSet) = false [owise] .
+
+  op hasTarget : TagSet -> Bool .
+  eq hasTarget(target(A:Oid) ; TG:TagSet) = true .
+  eq hasTarget(TG:TagSet) = false [owise] .
+
+  op deadletter : -> Oid [ctor] .       *** Lean's (tags.get? "...").getD ""
+  op tgt : TagSet -> Oid .
+  eq tgt(target(A:Oid) ; TG:TagSet) = A:Oid .
+  eq tgt(TG:TagSet) = deadletter [owise] .
+
+  op external : TagSet -> Bool .        *** PromiseObject.external
+  eq external(TG:TagSet) = hasTarget(TG:TagSet) or isTimer(TG:TagSet) .
+
+  op delayedStart : TagSet Nat -> Bool .          *** delay tag strictly future
+  eq delayedStart(delay(N:Nat) ; TG:TagSet, T:Nat) = N:Nat > T:Nat .
+  eq delayedStart(TG:TagSet, T:Nat) = false [owise] .
+
+  op delayOf : TagSet -> Nat .    *** partial: only used under delayedStart
+  eq delayOf(delay(N:Nat) ; TG:TagSet) = N:Nat .
+
+  *** ServerConfig.retryTimeout is deliberately absent: the envelope does not
+  *** model the retry timer (deviation 2)
+
+  *** -------------------------------------------------------------------------
+  *** classes -- spec/01-objects/state.lean
+  *** -------------------------------------------------------------------------
+
+  ops Promise Task Sched Clock Registry : -> Cid [ctor] .
+  ops clock reg : -> Oid [ctor] .
+
+  *** Promise attributes (PromiseObject)
+  op pState:_    : PromiseState -> Attribute [ctor gather (&)] .
+  op param:_     : Value -> Attribute [ctor gather (&)] .
+  op value:_     : Value -> Attribute [ctor gather (&)] .
+  op tags:_      : TagSet -> Attribute [ctor gather (&)] .
+  op timeoutAt:_ : Nat -> Attribute [ctor gather (&)] .
+  op createdAt:_ : Nat -> Attribute [ctor gather (&)] .
+  op settledAt:_ : OptNat -> Attribute [ctor gather (&)] .
+  op callbacks:_ : IdSet -> Attribute [ctor gather (&)] .
+  op listeners:_ : IdSet -> Attribute [ctor gather (&)] .
+
+  *** Task attributes (TaskObject). ttl: is the wire-visible duration;
+  *** lease: is the absolute expiry stamped at acquire/heartbeat (Lean's
+  *** taskTimeouts deadline, kept on the object); notBefore: is a pending
+  *** delayed start, owed once by [task-dispatch]
+  op tState:_    : TaskState -> Attribute [ctor gather (&)] .
+  op version:_   : Nat -> Attribute [ctor gather (&)] .
+  op ttl:_       : OptNat -> Attribute [ctor gather (&)] .
+  op pid:_       : OptOid -> Attribute [ctor gather (&)] .
+  op resumes:_   : IdSet -> Attribute [ctor gather (&)] .
+  op lease:_     : OptNat -> Attribute [ctor gather (&)] .
+  op notBefore:_ : OptNat -> Attribute [ctor gather (&)] .
+
+  *** Sched attributes (Schedule); nextRunAt doubles as the scheduleTimeouts slot
+  op period:_         : Nat -> Attribute [ctor gather (&)] .   *** abstracts cron
+  op promiseTimeout:_ : Nat -> Attribute [ctor gather (&)] .
+  op promiseParam:_   : Value -> Attribute [ctor gather (&)] .
+  op promiseTags:_    : TagSet -> Attribute [ctor gather (&)] .
+  op nextRunAt:_      : Nat -> Attribute [ctor gather (&)] .
+  op lastRunAt:_      : OptNat -> Attribute [ctor gather (&)] .
+
+  *** Clock / Registry (registry = existence oracle: Maude cannot match on the
+  *** ABSENCE of an object in the soup, so creates and 404s consult id sets)
+  op now:_     : Nat -> Attribute [ctor gather (&)] .
+  op horizon:_ : Nat -> Attribute [ctor gather (&)] .
+  op ps:_ : IdSet -> Attribute [ctor gather (&)] .
+  op ts:_ : IdSet -> Attribute [ctor gather (&)] .
+  op ss:_ : IdSet -> Attribute [ctor gather (&)] .
+
+  op occ : Oid Nat -> Oid [ctor] .      *** expand(template, id, ts) for schedules
+
+  *** -------------------------------------------------------------------------
+  *** messages
+  *** -------------------------------------------------------------------------
+
+  *** requests: first argument is the reply-to address
+  op promGet       : Oid Oid -> Msg [ctor msg] .                       *** P-01 (from, id)
+  op promCreate    : Oid Oid Nat Value TagSet -> Msg [ctor msg] .      *** P-02 (from, id, timeoutAt, param, tags)
+  op promSettle    : Oid Oid PromiseState Value -> Msg [ctor msg] .    *** P-03 (from, id, state, value)
+  op regCallback   : Oid Oid Oid -> Msg [ctor msg] .                   *** P-04 (from, awaited, awaiter)
+  op regListener   : Oid Oid Oid -> Msg [ctor msg] .                   *** P-05 (from, awaited, address)
+  op taskGet       : Oid Oid -> Msg [ctor msg] .                       *** T-01 (from, id)
+  op taskCreate    : Oid Oid Nat Oid Nat Value TagSet -> Msg [ctor msg] . *** T-02 (from, pid, ttl, id, timeoutAt, param, tags)
+  op taskAcquire   : Oid Oid Nat Oid Nat -> Msg [ctor msg] .           *** T-03 (from, id, version, pid, ttl)
+  op taskFence     : Oid Oid Nat FenceAction -> Msg [ctor msg] .       *** T-04 (from, id, version, action)
+  op taskHeartbeat : Oid Oid Oid Nat -> Msg [ctor msg] .               *** T-05 (from, pid, id, version)
+  op taskSuspend   : Oid Oid Nat IdSet -> Msg [ctor msg] .             *** T-06 (from, id, version, awaited)
+  op taskFulfill   : Oid Oid Nat PromiseState Value -> Msg [ctor msg] . *** T-07 (from, id, version, state, value)
+  op taskRelease   : Oid Oid Nat -> Msg [ctor msg] .                   *** T-08 (from, id, version)
+  op taskHalt      : Oid Oid -> Msg [ctor msg] .                       *** T-09 (from, id)
+  op taskContinue  : Oid Oid -> Msg [ctor msg] .                       *** T-10 (from, id)
+  op schedGet      : Oid Oid -> Msg [ctor msg] .                       *** S-01 (from, id)
+  op schedCreate   : Oid Oid Nat Nat Value TagSet -> Msg [ctor msg] .  *** S-02 (from, id, period, promiseTimeout, param, tags)
+  op schedDelete   : Oid Oid -> Msg [ctor msg] .                       *** S-03 (from, id)
+
+  sort FenceAction .
+  op fCreate : Oid Nat Value TagSet -> FenceAction [ctor] .
+  op fSettle : Oid PromiseState Value -> FenceAction [ctor] .
+
+  *** responses: status + (projected) state view; full records elided
+  sort View .
+  op noView : -> View [ctor] .
+  op pv : Oid PromiseState -> View [ctor] .
+  op tv : Oid TaskState Nat -> View [ctor] .
+  op resp : Oid Nat View -> Msg [ctor msg] .
+
+  *** outbox traffic (boundary observables; internal resumes have no message
+  *** form -- release IS delivery, deviation 1)
+  op execute : Oid Oid Nat -> Msg [ctor msg] .          *** target, taskId, version
+  op unblock : Oid Oid PromiseState -> Msg [ctor msg] . *** address, promiseId, state
+
+  *** keyed outbox dedup (state.lean setMessage): execute keyed by task id --
+  *** newest wins = higher version; the target is fixed per promise -- and
+  *** unblock keyed by promise:address
+  eq execute(A:Oid, I:Oid, V:Nat) execute(A:Oid, I:Oid, W:Nat)
+   = execute(A:Oid, I:Oid, max(V:Nat, W:Nat)) .
+  eq unblock(A:Oid, I:Oid, PS:PromiseState) unblock(A:Oid, I:Oid, PS:PromiseState)
+   = unblock(A:Oid, I:Oid, PS:PromiseState) .
+
+  *** -------------------------------------------------------------------------
+  *** helpers
+  *** -------------------------------------------------------------------------
+
+  vars A B W    : Oid .            *** addresses / pids
+  vars I J K S  : Oid .            *** promise / task / schedule ids
+  vars T D D' D0 CT H TTL N PT : Nat .
+  vars V V'     : Nat .
+  vars PS PS' QS : PromiseState .
+  vars KS       : TaskState .
+  vars PR VL VL' : Value .
+  vars TG TG'   : TagSet .
+  vars CB LS RS IS PSet TSet SSet : IdSet .
+  vars ON ON' OL : OptNat .
+  vars OO       : OptOid .
+  vars AS AS' AS'' AS3 : AttributeSet .
+  vars C        : Configuration .
+  vars FA       : FenceAction .
+
+  *** timeout projection (README "Projection"; used by every read path)
+  op timeoutState : TagSet -> PromiseState .
+  eq timeoutState(TG) = if isTimer(TG) then resolved else rejectedTimedout fi .
+
+  op project : PromiseState TagSet Nat Nat -> PromiseState .
+  eq project(pending, TG, D, T) = if D <= T then timeoutState(TG) else pending fi .
+  eq project(PS, TG, D, T) = PS [owise] .
+
+  *** promise.create live branch (P-02 lines 9-39): promise + optional task
+  *** + optional immediate execute; also reused by fence-create, schedule-fire.
+  *** No arming field: [promise-timeout*] derive enabledness from the fields
+  op createLive : Oid Nat Value TagSet Nat -> Configuration .
+  eq createLive(I, D, PR, TG, T) =
+     < I : Promise | pState: pending, param: PR, value: noValue, tags: TG,
+                     timeoutAt: D, createdAt: T, settledAt: noNat,
+                     callbacks: mtIds, listeners: mtIds >
+     spawnTask(I, TG, T) .
+
+  op spawnTask : Oid TagSet Nat -> Configuration .
+  eq spawnTask(I, TG, T) =
+     if hasTarget(TG) then
+       (if delayedStart(TG, T) then
+          < I : Task | tState: tPending, version: 0, ttl: noNat, pid: noOid,
+                       resumes: mtIds, lease: noNat, notBefore: delayOf(TG) >
+        else
+          < I : Task | tState: tPending, version: 0, ttl: noNat, pid: noOid,
+                       resumes: mtIds, lease: noNat, notBefore: noNat >
+          execute(tgt(TG), I, 0)
+        fi)
+     else none fi .
+
+  *** promise.create expired branch (P-02 lines 40-62)
+  op createExpired : Oid Nat Value TagSet -> Configuration .
+  eq createExpired(I, D, PR, TG) =
+     < I : Promise | pState: timeoutState(TG), param: PR, value: noValue, tags: TG,
+                     timeoutAt: D, createdAt: D, settledAt: D,
+                     callbacks: mtIds, listeners: mtIds >
+     (if hasTarget(TG) then
+        < I : Task | tState: tFulfilled, version: 0, ttl: noNat, pid: noOid,
+                     resumes: mtIds, lease: noNat, notBefore: noNat >
+      else none fi) .
+
+  *** -------------------------------------------------------------------------
+  *** time -- the environment's clock; every "will happen" obligation is
+  *** gated on it. Bounded by horizon to keep the state space finite.
+  *** -------------------------------------------------------------------------
+
+  crl [tick] :
+     < clock : Clock | now: T, horizon: H >
+  => < clock : Clock | now: T + 1, horizon: H >
+  if T < H .
+
+  *** -------------------------------------------------------------------------
+  *** P-01 promise.get
+  *** -------------------------------------------------------------------------
+
+  rl [promise-get] :
+     promGet(A, I)
+     < I : Promise | pState: PS, tags: TG, timeoutAt: D, AS >
+     < clock : Clock | now: T, AS' >
+  => < I : Promise | pState: PS, tags: TG, timeoutAt: D, AS >
+     < clock : Clock | now: T, AS' >
+     resp(A, 200, pv(I, project(PS, TG, D, T))) .
+
+  crl [promise-get-404] :
+     promGet(A, I)
+     < reg : Registry | ps: PSet, AS >
+  => < reg : Registry | ps: PSet, AS >
+     resp(A, 404, noView)
+  if not (I in PSet) .
+
+  *** -------------------------------------------------------------------------
+  *** P-02 promise.create
+  *** -------------------------------------------------------------------------
+
+  crl [promise-create] :
+     promCreate(A, I, D, PR, TG)
+     < reg : Registry | ps: PSet, ts: TSet, AS >
+     < clock : Clock | now: T, AS' >
+  => < reg : Registry | ps: (I ; PSet), ts: addIf(hasTarget(TG), I, TSet), AS >
+     < clock : Clock | now: T, AS' >
+     (if D > T then createLive(I, D, PR, TG, T) else createExpired(I, D, PR, TG) fi)
+     resp(A, 200, pv(I, if D > T then pending else timeoutState(TG) fi))
+  if not (I in PSet) .
+
+  *** existing promise: no state change, 200 with projection (P-02 lines 63-72)
+  rl [promise-create-dup] :
+     promCreate(A, I, D, PR, TG)
+     < I : Promise | pState: PS, tags: TG', timeoutAt: D', AS >
+     < clock : Clock | now: T, AS' >
+  => < I : Promise | pState: PS, tags: TG', timeoutAt: D', AS >
+     < clock : Clock | now: T, AS' >
+     resp(A, 200, pv(I, project(PS, TG', D', T))) .
+
+  *** -------------------------------------------------------------------------
+  *** P-03 promise.settle -- DEVIATION 1: a pure state change. Callbacks and
+  *** listeners stay on the settled promise; the [release-*] rules discharge
+  *** them later, one at a time.
+  *** -------------------------------------------------------------------------
+
+  crl [promise-settle] :
+     promSettle(A, I, PS', VL)
+     < I : Promise | pState: pending, timeoutAt: D, value: VL', settledAt: ON, AS >
+     < I : Task | tState: KS, ttl: ON', pid: OO, resumes: RS, lease: OL, AS' >
+     < clock : Clock | now: T, AS'' >
+  => < I : Promise | pState: PS', timeoutAt: D, value: VL, settledAt: T, AS >
+     < I : Task | tState: tFulfilled, ttl: noNat, pid: noOid, resumes: mtIds,
+                  lease: noNat, AS' >
+     < clock : Clock | now: T, AS'' >
+     resp(A, 200, pv(I, PS'))
+  if D > T .
+
+  crl [promise-settle-notask] :
+     promSettle(A, I, PS', VL)
+     < I : Promise | pState: pending, timeoutAt: D, value: VL', settledAt: ON, AS >
+     < reg : Registry | ts: TSet, AS' >
+     < clock : Clock | now: T, AS'' >
+  => < I : Promise | pState: PS', timeoutAt: D, value: VL, settledAt: T, AS >
+     < reg : Registry | ts: TSet, AS' >
+     < clock : Clock | now: T, AS'' >
+     resp(A, 200, pv(I, PS'))
+  if D > T and not (I in TSet) .
+
+  *** pending past deadline: projection only, no state change
+  crl [promise-settle-expired] :
+     promSettle(A, I, PS', VL)
+     < I : Promise | pState: pending, tags: TG, timeoutAt: D, AS >
+     < clock : Clock | now: T, AS' >
+  => < I : Promise | pState: pending, tags: TG, timeoutAt: D, AS >
+     < clock : Clock | now: T, AS' >
+     resp(A, 200, pv(I, timeoutState(TG)))
+  if D <= T .
+
+  crl [promise-settle-settled] :
+     promSettle(A, I, PS', VL)
+     < I : Promise | pState: PS, AS >
+  => < I : Promise | pState: PS, AS >
+     resp(A, 200, pv(I, PS))
+  if PS =/= pending .
+
+  crl [promise-settle-404] :
+     promSettle(A, I, PS', VL)
+     < reg : Registry | ps: PSet, AS >
+  => < reg : Registry | ps: PSet, AS >
+     resp(A, 404, noView)
+  if not (I in PSet) .
+
+  *** -------------------------------------------------------------------------
+  *** P-04 promise.register_callback
+  *** -------------------------------------------------------------------------
+
+  *** self-await is a guaranteed deadlock-until-timeout: rejected outright,
+  *** before any state is consulted (mirrors the Lean guard order)
+  rl [reg-callback-self] :
+     regCallback(A, I, I)
+  => resp(A, 422, noView) .
+
+  *** both live: append awaiter to awaited.callbacks (only if awaiter live).
+  *** re-registration is idempotent: IdSet is an idempotent set, so a
+  *** duplicate collapses -- exactly Lean's addCallback dedup
+  crl [reg-callback] :
+     regCallback(A, J, I)
+     < J : Promise | pState: pending, timeoutAt: D, callbacks: CB, AS >
+     < I : Promise | pState: PS, tags: TG, timeoutAt: D', AS' >
+     < clock : Clock | now: T, AS'' >
+  => < J : Promise | pState: pending, timeoutAt: D,
+                     callbacks: (if PS == pending and D' > T then (I ; CB) else CB fi), AS >
+     < I : Promise | pState: PS, tags: TG, timeoutAt: D', AS' >
+     < clock : Clock | now: T, AS'' >
+     resp(A, 200, pv(J, pending))
+  if hasTarget(TG) and D > T .
+
+  *** awaited expired or settled: 200 with projection, no change
+  crl [reg-callback-noop] :
+     regCallback(A, J, I)
+     < J : Promise | pState: PS, tags: TG, timeoutAt: D, AS >
+     < I : Promise | tags: TG', AS' >
+     < clock : Clock | now: T, AS'' >
+  => < J : Promise | pState: PS, tags: TG, timeoutAt: D, AS >
+     < I : Promise | tags: TG', AS' >
+     < clock : Clock | now: T, AS'' >
+     resp(A, 200, pv(J, project(PS, TG, D, T)))
+  if hasTarget(TG') and (PS =/= pending or D <= T) .
+
+  crl [reg-callback-422-notarget] :
+     regCallback(A, J, I)
+     < I : Promise | tags: TG', AS' >
+  => < I : Promise | tags: TG', AS' >
+     resp(A, 422, noView)
+  if not hasTarget(TG') .
+
+  crl [reg-callback-404] :
+     regCallback(A, J, I)
+     < reg : Registry | ps: PSet, AS >
+  => < reg : Registry | ps: PSet, AS >
+     resp(A, 404, noView)
+  if J =/= I and not (J in PSet) .
+
+  crl [reg-callback-422-missing] :
+     regCallback(A, J, I)
+     < reg : Registry | ps: PSet, AS >
+  => < reg : Registry | ps: PSet, AS >
+     resp(A, 422, noView)
+  if J =/= I and (J in PSet) and not (I in PSet) .
+
+  *** -------------------------------------------------------------------------
+  *** P-05 promise.register_listener
+  *** -------------------------------------------------------------------------
+
+  crl [reg-listener] :
+     regListener(A, J, B)
+     < J : Promise | pState: pending, timeoutAt: D, listeners: LS, AS >
+     < clock : Clock | now: T, AS' >
+  => < J : Promise | pState: pending, timeoutAt: D, listeners: (B ; LS), AS >
+     < clock : Clock | now: T, AS' >
+     resp(A, 200, pv(J, pending))
+  if D > T .
+
+  crl [reg-listener-noop] :
+     regListener(A, J, B)
+     < J : Promise | pState: PS, tags: TG, timeoutAt: D, AS >
+     < clock : Clock | now: T, AS' >
+  => < J : Promise | pState: PS, tags: TG, timeoutAt: D, AS >
+     < clock : Clock | now: T, AS' >
+     resp(A, 200, pv(J, project(PS, TG, D, T)))
+  if PS =/= pending or D <= T .
+
+  crl [reg-listener-404] :
+     regListener(A, J, B)
+     < reg : Registry | ps: PSet, AS >
+  => < reg : Registry | ps: PSet, AS >
+     resp(A, 404, noView)
+  if not (J in PSet) .
+
+  *** -------------------------------------------------------------------------
+  *** T-01 task.get (a task's promise always exists; the Lean 404-on-missing-
+  *** promise branch is unreachable)
+  *** -------------------------------------------------------------------------
+
+  rl [task-get] :
+     taskGet(A, I)
+     < I : Task | tState: KS, version: V, AS >
+     < I : Promise | pState: PS, timeoutAt: D, AS' >
+     < clock : Clock | now: T, AS'' >
+  => < I : Task | tState: KS, version: V, AS >
+     < I : Promise | pState: PS, timeoutAt: D, AS' >
+     < clock : Clock | now: T, AS'' >
+     resp(A, 200, tv(I, (if PS == pending and D > T then KS else tFulfilled fi), V)) .
+
+  crl [task-get-404] :
+     taskGet(A, I)
+     < reg : Registry | ts: TSet, AS >
+  => < reg : Registry | ts: TSet, AS >
+     resp(A, 404, noView)
+  if not (I in TSet) .
+
+  *** -------------------------------------------------------------------------
+  *** T-02 task.create -- create-with-immediate-acquire, or re-acquire pending
+  *** -------------------------------------------------------------------------
+
+  crl [task-create-new] :
+     taskCreate(A, W, TTL, I, D, PR, TG)
+     < reg : Registry | ps: PSet, ts: TSet, AS >
+     < clock : Clock | now: T, AS' >
+  => < reg : Registry | ps: (I ; PSet), ts: (I ; TSet), AS >
+     < clock : Clock | now: T, AS' >
+     < I : Promise | pState: pending, param: PR, value: noValue, tags: TG,
+                     timeoutAt: D, createdAt: T, settledAt: noNat,
+                     callbacks: mtIds, listeners: mtIds >
+     < I : Task | tState: tAcquired, version: 1, ttl: TTL, pid: W,
+                  resumes: mtIds, lease: (T + TTL), notBefore: noNat >
+     resp(A, 200, tv(I, tAcquired, 1))
+  if not (I in PSet) and D > T .
+
+  crl [task-create-new-expired] :
+     taskCreate(A, W, TTL, I, D, PR, TG)
+     < reg : Registry | ps: PSet, ts: TSet, AS >
+     < clock : Clock | now: T, AS' >
+  => < reg : Registry | ps: (I ; PSet), ts: (I ; TSet), AS >
+     < clock : Clock | now: T, AS' >
+     < I : Promise | pState: timeoutState(TG), param: PR, value: noValue, tags: TG,
+                     timeoutAt: D, createdAt: D, settledAt: D,
+                     callbacks: mtIds, listeners: mtIds >
+     < I : Task | tState: tFulfilled, version: 0, ttl: noNat, pid: noOid,
+                  resumes: mtIds, lease: noNat, notBefore: noNat >
+     resp(A, 200, tv(I, tFulfilled, 0))
+  if not (I in PSet) and D <= T .
+
+  crl [task-create-422] :
+     taskCreate(A, W, TTL, I, D, PR, TG)
+     < I : Promise | tags: TG', AS >
+  => < I : Promise | tags: TG', AS >
+     resp(A, 422, noView)
+  if not hasTarget(TG') .
+
+  crl [task-create-fulfilled] :
+     taskCreate(A, W, TTL, I, D, PR, TG)
+     < I : Promise | tags: TG', AS >
+     < I : Task | tState: tFulfilled, version: V, AS' >
+  => < I : Promise | tags: TG', AS >
+     < I : Task | tState: tFulfilled, version: V, AS' >
+     resp(A, 200, tv(I, tFulfilled, V))
+  if hasTarget(TG') .
+
+  crl [task-create-reacquire] :
+     taskCreate(A, W, TTL, I, D, PR, TG)
+     < I : Promise | tags: TG', AS >
+     < I : Task | tState: tPending, version: V, ttl: ON, pid: OO,
+                  resumes: RS, lease: OL, notBefore: ON', AS' >
+     < clock : Clock | now: T, AS'' >
+  => < I : Promise | tags: TG', AS >
+     < I : Task | tState: tAcquired, version: V + 1, ttl: TTL, pid: W,
+                  resumes: mtIds, lease: (T + TTL), notBefore: noNat, AS' >
+     < clock : Clock | now: T, AS'' >
+     resp(A, 200, tv(I, tAcquired, V + 1))
+  if hasTarget(TG') .
+
+  crl [task-create-409] :
+     taskCreate(A, W, TTL, I, D, PR, TG)
+     < I : Promise | tags: TG', AS >
+     < I : Task | tState: KS, AS' >
+  => < I : Promise | tags: TG', AS >
+     < I : Task | tState: KS, AS' >
+     resp(A, 409, noView)
+  if hasTarget(TG') and KS =/= tFulfilled and KS =/= tPending .
+
+  *** -------------------------------------------------------------------------
+  *** T-03 task.acquire
+  *** -------------------------------------------------------------------------
+
+  crl [task-acquire] :
+     taskAcquire(A, I, V, W, TTL)
+     < I : Task | tState: tPending, version: V, ttl: ON, pid: OO,
+                  resumes: RS, lease: OL, notBefore: ON', AS >
+     < I : Promise | pState: pending, timeoutAt: D, AS' >
+     < clock : Clock | now: T, AS'' >
+  => < I : Task | tState: tAcquired, version: V + 1, ttl: TTL, pid: W,
+                  resumes: mtIds, lease: (T + TTL), notBefore: noNat, AS >
+     < I : Promise | pState: pending, timeoutAt: D, AS' >
+     < clock : Clock | now: T, AS'' >
+     resp(A, 200, tv(I, tAcquired, V + 1))
+  if D > T .
+
+  crl [task-acquire-409] :
+     taskAcquire(A, I, V, W, TTL)
+     < I : Task | tState: KS, version: V', AS >
+     < I : Promise | pState: PS, timeoutAt: D, AS' >
+     < clock : Clock | now: T, AS'' >
+  => < I : Task | tState: KS, version: V', AS >
+     < I : Promise | pState: PS, timeoutAt: D, AS' >
+     < clock : Clock | now: T, AS'' >
+     resp(A, 409, noView)
+  if KS =/= tPending or PS =/= pending or D <= T or V =/= V' .
+
+  crl [task-acquire-404] :
+     taskAcquire(A, I, V, W, TTL)
+     < reg : Registry | ts: TSet, AS >
+  => < reg : Registry | ts: TSet, AS >
+     resp(A, 404, noView)
+  if not (I in TSet) .
+
+  *** -------------------------------------------------------------------------
+  *** T-04 task.fence -- inner action runs atomically under the fencing guard.
+  *** fence-settle of the task's OWN promise is task.fulfill; not modeled here.
+  *** -------------------------------------------------------------------------
+
+  crl [task-fence-create] :
+     taskFence(A, I, V, fCreate(K, D', PR, TG))
+     < I : Task | tState: tAcquired, version: V, AS >
+     < I : Promise | pState: pending, timeoutAt: D, AS' >
+     < reg : Registry | ps: PSet, ts: TSet, AS'' >
+     < clock : Clock | now: T, AS3 >
+  => < I : Task | tState: tAcquired, version: V, AS >
+     < I : Promise | pState: pending, timeoutAt: D, AS' >
+     < reg : Registry | ps: (K ; PSet), ts: addIf(hasTarget(TG), K, TSet), AS'' >
+     < clock : Clock | now: T, AS3 >
+     (if D' > T then createLive(K, D', PR, TG, T) else createExpired(K, D', PR, TG) fi)
+     resp(A, 200, pv(K, if D' > T then pending else timeoutState(TG) fi))
+  if D > T and not (K in PSet) .
+
+  crl [task-fence-create-dup] :
+     taskFence(A, I, V, fCreate(K, D', PR, TG))
+     < I : Task | tState: tAcquired, version: V, AS >
+     < I : Promise | pState: pending, timeoutAt: D, AS' >
+     < K : Promise | pState: QS, tags: TG', timeoutAt: D0, AS'' >
+     < clock : Clock | now: T, AS3 >
+  => < I : Task | tState: tAcquired, version: V, AS >
+     < I : Promise | pState: pending, timeoutAt: D, AS' >
+     < K : Promise | pState: QS, tags: TG', timeoutAt: D0, AS'' >
+     < clock : Clock | now: T, AS3 >
+     resp(A, 200, pv(K, project(QS, TG', D0, T)))
+  if D > T .
+
+  crl [task-fence-settle] :
+     taskFence(A, I, V, fSettle(K, PS', VL))
+     < I : Task | tState: tAcquired, version: V, AS >
+     < I : Promise | pState: pending, timeoutAt: D, AS' >
+     < K : Promise | pState: pending, timeoutAt: D0, value: VL', settledAt: ON, AS'' >
+     < K : Task | tState: KS, ttl: ON', pid: OO, resumes: RS, lease: OL, AS3 >
+     < clock : Clock | now: T >
+  => < I : Task | tState: tAcquired, version: V, AS >
+     < I : Promise | pState: pending, timeoutAt: D, AS' >
+     < K : Promise | pState: PS', timeoutAt: D0, value: VL, settledAt: T, AS'' >
+     < K : Task | tState: tFulfilled, ttl: noNat, pid: noOid, resumes: mtIds,
+                  lease: noNat, AS3 >
+     < clock : Clock | now: T >
+     resp(A, 200, pv(K, PS'))
+  if D > T and D0 > T .
+
+  crl [task-fence-settle-notask] :
+     taskFence(A, I, V, fSettle(K, PS', VL))
+     < I : Task | tState: tAcquired, version: V, AS >
+     < I : Promise | pState: pending, timeoutAt: D, AS' >
+     < K : Promise | pState: pending, timeoutAt: D0, value: VL', settledAt: ON, AS'' >
+     < reg : Registry | ts: TSet, AS3 >
+     < clock : Clock | now: T >
+  => < I : Task | tState: tAcquired, version: V, AS >
+     < I : Promise | pState: pending, timeoutAt: D, AS' >
+     < K : Promise | pState: PS', timeoutAt: D0, value: VL, settledAt: T, AS'' >
+     < reg : Registry | ts: TSet, AS3 >
+     < clock : Clock | now: T >
+     resp(A, 200, pv(K, PS'))
+  if D > T and D0 > T and not (K in TSet) .
+
+  *** inner settle on an expired or settled promise: 200 + projection, no change
+  crl [task-fence-settle-noop] :
+     taskFence(A, I, V, fSettle(K, PS', VL))
+     < I : Task | tState: tAcquired, version: V, AS >
+     < I : Promise | pState: pending, timeoutAt: D, AS' >
+     < K : Promise | pState: QS, tags: TG', timeoutAt: D0, AS'' >
+     < clock : Clock | now: T >
+  => < I : Task | tState: tAcquired, version: V, AS >
+     < I : Promise | pState: pending, timeoutAt: D, AS' >
+     < K : Promise | pState: QS, tags: TG', timeoutAt: D0, AS'' >
+     < clock : Clock | now: T >
+     resp(A, 200, pv(K, project(QS, TG', D0, T)))
+  if D > T and (QS =/= pending or D0 <= T) .
+
+  crl [task-fence-409] :
+     taskFence(A, I, V, FA)
+     < I : Task | tState: KS, version: V', AS >
+     < I : Promise | pState: PS, timeoutAt: D, AS' >
+     < clock : Clock | now: T, AS'' >
+  => < I : Task | tState: KS, version: V', AS >
+     < I : Promise | pState: PS, timeoutAt: D, AS' >
+     < clock : Clock | now: T, AS'' >
+     resp(A, 409, noView)
+  if KS =/= tAcquired or PS =/= pending or D <= T or V =/= V' .
+
+  crl [task-fence-404] :
+     taskFence(A, I, V, FA)
+     < reg : Registry | ts: TSet, AS >
+  => < reg : Registry | ts: TSet, AS >
+     resp(A, 404, noView)
+  if not (I in TSet) .
+
+  *** -------------------------------------------------------------------------
+  *** T-05 task.heartbeat (single task ref; Lean folds a list of refs)
+  *** -------------------------------------------------------------------------
+
+  crl [task-heartbeat] :
+     taskHeartbeat(A, W, I, V)
+     < I : Task | tState: tAcquired, version: V, pid: W, ttl: TTL, lease: OL, AS >
+     < I : Promise | pState: pending, timeoutAt: D, AS' >
+     < clock : Clock | now: T, AS'' >
+  => < I : Task | tState: tAcquired, version: V, pid: W, ttl: TTL,
+                  lease: (T + TTL), AS >
+     < I : Promise | pState: pending, timeoutAt: D, AS' >
+     < clock : Clock | now: T, AS'' >
+     resp(A, 200, noView)
+  if D > T .
+
+  crl [task-heartbeat-noop] :
+     taskHeartbeat(A, W, I, V)
+     < I : Task | tState: KS, version: V', pid: OO, AS >
+     < I : Promise | pState: PS, timeoutAt: D, AS' >
+     < clock : Clock | now: T, AS'' >
+  => < I : Task | tState: KS, version: V', pid: OO, AS >
+     < I : Promise | pState: PS, timeoutAt: D, AS' >
+     < clock : Clock | now: T, AS'' >
+     resp(A, 200, noView)
+  if KS =/= tAcquired or V =/= V' or OO =/= W or PS =/= pending or D <= T .
+
+  crl [task-heartbeat-missing] :
+     taskHeartbeat(A, W, I, V)
+     < reg : Registry | ts: TSet, AS >
+  => < reg : Registry | ts: TSet, AS >
+     resp(A, 200, noView)
+  if not (I in TSet) .
+
+  *** -------------------------------------------------------------------------
+  *** T-06 task.suspend (1 or 2 awaited promises; Lean takes a list)
+  *** the callback registered on the awaited promise is the TASK's id.
+  *** re-registration stays idempotent (IdSet): a task woken by one awaited
+  *** promise legitimately re-suspends on the others.
+  *** NOTE: Lean rejects a payload naming the same awaited id twice (422);
+  *** here the payload is an IdSet, so a duplicate collapses before the
+  *** machine sees it -- that request shape is unrepresentable in this model
+  *** -------------------------------------------------------------------------
+
+  *** suspending on the task's own promise is self-await: 422
+  crl [task-suspend-self] :
+     taskSuspend(A, I, V, IS)
+     < I : Task | tState: tAcquired, version: V, AS >
+     < I : Promise | pState: pending, timeoutAt: D, AS' >
+     < clock : Clock | now: T, AS'' >
+  => < I : Task | tState: tAcquired, version: V, AS >
+     < I : Promise | pState: pending, timeoutAt: D, AS' >
+     < clock : Clock | now: T, AS'' >
+     resp(A, 422, noView)
+  if D > T and I in IS .
+
+  crl [task-suspend-1] :
+     taskSuspend(A, I, V, J)
+     < I : Task | tState: tAcquired, version: V, ttl: ON, pid: OO,
+                  resumes: RS, lease: OL, AS >
+     < I : Promise | pState: pending, timeoutAt: D, AS' >
+     < J : Promise | pState: pending, timeoutAt: D', callbacks: CB, AS'' >
+     < clock : Clock | now: T, AS3 >
+  => < I : Task | tState: tSuspended, version: V, ttl: noNat, pid: noOid,
+                  resumes: mtIds, lease: noNat, AS >
+     < I : Promise | pState: pending, timeoutAt: D, AS' >
+     < J : Promise | pState: pending, timeoutAt: D', callbacks: (I ; CB), AS'' >
+     < clock : Clock | now: T, AS3 >
+     resp(A, 200, noView)
+  if D > T and D' > T .
+
+  *** an awaited promise already settled or expired: 300, resumes cleared
+  crl [task-suspend-1-dead] :
+     taskSuspend(A, I, V, J)
+     < I : Task | tState: tAcquired, version: V, resumes: RS, AS >
+     < I : Promise | pState: pending, timeoutAt: D, AS' >
+     < J : Promise | pState: QS, timeoutAt: D', AS'' >
+     < clock : Clock | now: T, AS3 >
+  => < I : Task | tState: tAcquired, version: V, resumes: mtIds, AS >
+     < I : Promise | pState: pending, timeoutAt: D, AS' >
+     < J : Promise | pState: QS, timeoutAt: D', AS'' >
+     < clock : Clock | now: T, AS3 >
+     resp(A, 300, noView)
+  if D > T and (QS =/= pending or D' <= T) .
+
+  crl [task-suspend-2] :
+     taskSuspend(A, I, V, (J ; K))
+     < I : Task | tState: tAcquired, version: V, ttl: ON, pid: OO,
+                  resumes: RS, lease: OL, AS >
+     < I : Promise | pState: pending, timeoutAt: D, AS' >
+     < J : Promise | pState: pending, timeoutAt: D', callbacks: CB, AS'' >
+     < K : Promise | pState: pending, timeoutAt: D0, callbacks: LS, AS3 >
+     < clock : Clock | now: T >
+  => < I : Task | tState: tSuspended, version: V, ttl: noNat, pid: noOid,
+                  resumes: mtIds, lease: noNat, AS >
+     < I : Promise | pState: pending, timeoutAt: D, AS' >
+     < J : Promise | pState: pending, timeoutAt: D', callbacks: (I ; CB), AS'' >
+     < K : Promise | pState: pending, timeoutAt: D0, callbacks: (I ; LS), AS3 >
+     < clock : Clock | now: T >
+     resp(A, 200, noView)
+  if D > T and D' > T and D0 > T .
+
+  crl [task-suspend-2-dead] :
+     taskSuspend(A, I, V, (J ; K))
+     < I : Task | tState: tAcquired, version: V, resumes: RS, AS >
+     < I : Promise | pState: pending, timeoutAt: D, AS' >
+     < J : Promise | pState: QS, timeoutAt: D', AS'' >
+     < K : Promise | pState: PS, timeoutAt: D0, AS3 >
+     < clock : Clock | now: T >
+  => < I : Task | tState: tAcquired, version: V, resumes: mtIds, AS >
+     < I : Promise | pState: pending, timeoutAt: D, AS' >
+     < J : Promise | pState: QS, timeoutAt: D', AS'' >
+     < K : Promise | pState: PS, timeoutAt: D0, AS3 >
+     < clock : Clock | now: T >
+     resp(A, 300, noView)
+  if D > T and ((QS =/= pending or D' <= T) or (PS =/= pending or D0 <= T)) .
+
+  crl [task-suspend-409] :
+     taskSuspend(A, I, V, IS)
+     < I : Task | tState: KS, version: V', AS >
+     < I : Promise | pState: PS, timeoutAt: D, AS' >
+     < clock : Clock | now: T, AS'' >
+  => < I : Task | tState: KS, version: V', AS >
+     < I : Promise | pState: PS, timeoutAt: D, AS' >
+     < clock : Clock | now: T, AS'' >
+     resp(A, 409, noView)
+  if KS =/= tAcquired or PS =/= pending or D <= T or V =/= V' .
+
+  crl [task-suspend-422] :
+     taskSuspend(A, I, V, (J ; IS))
+     < reg : Registry | ps: PSet, AS >
+  => < reg : Registry | ps: PSet, AS >
+     resp(A, 422, noView)
+  if not (J in PSet) .
+
+  crl [task-suspend-404] :
+     taskSuspend(A, I, V, IS)
+     < reg : Registry | ts: TSet, AS >
+  => < reg : Registry | ts: TSet, AS >
+     resp(A, 404, noView)
+  if not (I in TSet) .
+
+  *** -------------------------------------------------------------------------
+  *** T-07 task.fulfill -- settle own promise + fulfill task, one transition
+  *** (pure state change; the chain is discharged lazily by [release-*])
+  *** -------------------------------------------------------------------------
+
+  crl [task-fulfill] :
+     taskFulfill(A, I, V, PS', VL)
+     < I : Task | tState: tAcquired, version: V, ttl: ON, pid: OO,
+                  resumes: RS, lease: OL, AS >
+     < I : Promise | pState: pending, timeoutAt: D, value: VL', settledAt: ON', AS' >
+     < clock : Clock | now: T, AS'' >
+  => < I : Task | tState: tFulfilled, version: V, ttl: noNat, pid: noOid,
+                  resumes: mtIds, lease: noNat, AS >
+     < I : Promise | pState: PS', timeoutAt: D, value: VL, settledAt: T, AS' >
+     < clock : Clock | now: T, AS'' >
+     resp(A, 200, pv(I, PS'))
+  if D > T .
+
+  crl [task-fulfill-409] :
+     taskFulfill(A, I, V, PS', VL)
+     < I : Task | tState: KS, version: V', AS >
+     < I : Promise | pState: PS, timeoutAt: D, AS' >
+     < clock : Clock | now: T, AS'' >
+  => < I : Task | tState: KS, version: V', AS >
+     < I : Promise | pState: PS, timeoutAt: D, AS' >
+     < clock : Clock | now: T, AS'' >
+     resp(A, 409, noView)
+  if KS =/= tAcquired or PS =/= pending or D <= T or V =/= V' .
+
+  crl [task-fulfill-404] :
+     taskFulfill(A, I, V, PS', VL)
+     < reg : Registry | ts: TSet, AS >
+  => < reg : Registry | ts: TSet, AS >
+     resp(A, 404, noView)
+  if not (I in TSet) .
+
+  *** -------------------------------------------------------------------------
+  *** T-08 task.release
+  *** -------------------------------------------------------------------------
+
+  crl [task-release] :
+     taskRelease(A, I, V)
+     < I : Task | tState: tAcquired, version: V, ttl: ON, pid: OO, lease: OL, AS >
+     < I : Promise | pState: pending, timeoutAt: D, tags: TG, AS' >
+     < clock : Clock | now: T, AS'' >
+  => < I : Task | tState: tPending, version: V, ttl: noNat, pid: noOid,
+                  lease: noNat, AS >
+     < I : Promise | pState: pending, timeoutAt: D, tags: TG, AS' >
+     < clock : Clock | now: T, AS'' >
+     execute(tgt(TG), I, V)
+     resp(A, 200, noView)
+  if D > T .
+
+  crl [task-release-409] :
+     taskRelease(A, I, V)
+     < I : Task | tState: KS, version: V', AS >
+     < I : Promise | pState: PS, timeoutAt: D, AS' >
+     < clock : Clock | now: T, AS'' >
+  => < I : Task | tState: KS, version: V', AS >
+     < I : Promise | pState: PS, timeoutAt: D, AS' >
+     < clock : Clock | now: T, AS'' >
+     resp(A, 409, noView)
+  if KS =/= tAcquired or PS =/= pending or D <= T or V =/= V' .
+
+  crl [task-release-404] :
+     taskRelease(A, I, V)
+     < reg : Registry | ts: TSet, AS >
+  => < reg : Registry | ts: TSet, AS >
+     resp(A, 404, noView)
+  if not (I in TSet) .
+
+  *** -------------------------------------------------------------------------
+  *** T-09 task.halt
+  *** -------------------------------------------------------------------------
+
+  crl [task-halt] :
+     taskHalt(A, I)
+     < I : Task | tState: KS, ttl: ON, pid: OO, lease: OL, AS >
+  => < I : Task | tState: tHalted, ttl: noNat, pid: noOid, lease: noNat, AS >
+     resp(A, 200, noView)
+  if KS =/= tFulfilled and KS =/= tHalted .
+
+  rl [task-halt-already] :
+     taskHalt(A, I)
+     < I : Task | tState: tHalted, AS >
+  => < I : Task | tState: tHalted, AS >
+     resp(A, 200, noView) .
+
+  rl [task-halt-409] :
+     taskHalt(A, I)
+     < I : Task | tState: tFulfilled, AS >
+  => < I : Task | tState: tFulfilled, AS >
+     resp(A, 409, noView) .
+
+  crl [task-halt-404] :
+     taskHalt(A, I)
+     < reg : Registry | ts: TSet, AS >
+  => < reg : Registry | ts: TSet, AS >
+     resp(A, 404, noView)
+  if not (I in TSet) .
+
+  *** -------------------------------------------------------------------------
+  *** T-10 task.continue (no promise-liveness guard, per the Lean handler)
+  *** -------------------------------------------------------------------------
+
+  rl [task-continue] :
+     taskContinue(A, I)
+     < I : Task | tState: tHalted, version: V, AS >
+     < I : Promise | tags: TG, AS' >
+     < clock : Clock | now: T, AS'' >
+  => < I : Task | tState: tPending, version: V, AS >
+     < I : Promise | tags: TG, AS' >
+     < clock : Clock | now: T, AS'' >
+     execute(tgt(TG), I, V)
+     resp(A, 200, noView) .
+
+  crl [task-continue-409] :
+     taskContinue(A, I)
+     < I : Task | tState: KS, AS >
+  => < I : Task | tState: KS, AS >
+     resp(A, 409, noView)
+  if KS =/= tHalted .
+
+  crl [task-continue-404] :
+     taskContinue(A, I)
+     < reg : Registry | ts: TSet, AS >
+  => < reg : Registry | ts: TSet, AS >
+     resp(A, 404, noView)
+  if not (I in TSet) .
+
+  *** -------------------------------------------------------------------------
+  *** S-01/02/03 schedules (cron abstracted to a fixed period)
+  *** -------------------------------------------------------------------------
+
+  rl [schedule-get] :
+     schedGet(A, S)
+     < S : Sched | AS >
+  => < S : Sched | AS >
+     resp(A, 200, noView) .
+
+  crl [schedule-get-404] :
+     schedGet(A, S)
+     < reg : Registry | ss: SSet, AS >
+  => < reg : Registry | ss: SSet, AS >
+     resp(A, 404, noView)
+  if not (S in SSet) .
+
+  crl [schedule-create] :
+     schedCreate(A, S, N, PT, PR, TG)
+     < reg : Registry | ss: SSet, AS >
+     < clock : Clock | now: T, AS' >
+  => < reg : Registry | ss: (S ; SSet), AS >
+     < clock : Clock | now: T, AS' >
+     < S : Sched | period: N, promiseTimeout: PT, promiseParam: PR,
+                   promiseTags: TG, nextRunAt: T + N, lastRunAt: noNat,
+                   createdAt: T >
+     resp(A, 200, noView)
+  if not (S in SSet) .
+
+  rl [schedule-create-dup] :
+     schedCreate(A, S, N, PT, PR, TG)
+     < S : Sched | AS >
+  => < S : Sched | AS >
+     resp(A, 200, noView) .
+
+  rl [schedule-delete] :
+     schedDelete(A, S)
+     < S : Sched | AS >
+     < reg : Registry | ss: SSet, AS' >
+  => < reg : Registry | ss: removeId(S, SSet), AS' >
+     resp(A, 200, noView) .
+
+  crl [schedule-delete-404] :
+     schedDelete(A, S)
+     < reg : Registry | ss: SSet, AS >
+  => < reg : Registry | ss: SSet, AS >
+     resp(A, 404, noView)
+  if not (S in SSet) .
+
+  *** -------------------------------------------------------------------------
+  *** internal: lazy release -- spec/02-actions/00-resume.lean (deviation 1)
+  *** A settled promise discharges its callbacks and listeners ONE AT A TIME,
+  *** at any later moment; release IS delivery. Every subset of "already
+  *** discharged" arises from interleaving. TIMEOUT ALWAYS WINS, evaluated at
+  *** release time; a dead registration is dropped -- this is Lean's
+  *** settlement scrub, paid lazily.
+  *** -------------------------------------------------------------------------
+
+  *** suspended awaiter wakes: re-pending, resumes := {awaited}, execute
+  *** re-emits the CURRENT version (a wake-up hint, not a new token)
+  crl [release-wake] :
+     < J : Promise | pState: PS, callbacks: (I ; CB), AS >
+     < I : Task | tState: tSuspended, version: V, resumes: RS, AS' >
+     < I : Promise | pState: QS, timeoutAt: D, tags: TG, AS'' >
+     < clock : Clock | now: T, AS3 >
+  => < J : Promise | pState: PS, callbacks: CB, AS >
+     < I : Task | tState: tPending, version: V, resumes: J, AS' >
+     < I : Promise | pState: QS, timeoutAt: D, tags: TG, AS'' >
+     < clock : Clock | now: T, AS3 >
+     (if hasTarget(TG) then execute(tgt(TG), I, V) else none fi)
+  if PS =/= pending and D > T .
+
+  *** active awaiter: buffer the resume (IdSet idempotency = Lean's dedup)
+  crl [release-buffer] :
+     < J : Promise | pState: PS, callbacks: (I ; CB), AS >
+     < I : Task | tState: KS, resumes: RS, AS' >
+     < I : Promise | timeoutAt: D, AS'' >
+     < clock : Clock | now: T, AS3 >
+  => < J : Promise | pState: PS, callbacks: CB, AS >
+     < I : Task | tState: KS, resumes: (J ; RS), AS' >
+     < I : Promise | timeoutAt: D, AS'' >
+     < clock : Clock | now: T, AS3 >
+  if PS =/= pending and D > T
+     and (KS == tPending or KS == tAcquired or KS == tHalted) .
+
+  *** timeout always wins: the awaiter is logically dead -- drop
+  crl [release-drop-timeout] :
+     < J : Promise | pState: PS, callbacks: (I ; CB), AS >
+     < I : Promise | timeoutAt: D, AS' >
+     < clock : Clock | now: T, AS'' >
+  => < J : Promise | pState: PS, callbacks: CB, AS >
+     < I : Promise | timeoutAt: D, AS' >
+     < clock : Clock | now: T, AS'' >
+  if PS =/= pending and D <= T .
+
+  crl [release-drop-fulfilled] :
+     < J : Promise | pState: PS, callbacks: (I ; CB), AS >
+     < I : Task | tState: tFulfilled, AS' >
+  => < J : Promise | pState: PS, callbacks: CB, AS >
+     < I : Task | tState: tFulfilled, AS' >
+  if PS =/= pending .
+
+  crl [release-drop-missing] :
+     < J : Promise | pState: PS, callbacks: (I ; CB), AS >
+     < reg : Registry | ps: PSet, ts: TSet, AS' >
+  => < J : Promise | pState: PS, callbacks: CB, AS >
+     < reg : Registry | ps: PSet, ts: TSet, AS' >
+  if PS =/= pending and (not (I in PSet) or not (I in TSet)) .
+
+  *** listener release: emit the unblock, one listener at a time
+  crl [release-listener] :
+     < J : Promise | pState: PS, listeners: (B ; LS), AS >
+  => < J : Promise | pState: PS, listeners: LS, AS >
+     unblock(B, J, PS)
+  if PS =/= pending .
+
+  *** -------------------------------------------------------------------------
+  *** internal: environment-fired timeouts -- spec/02-actions/02-timeouts.lean
+  *** enabled directly by the object's fields (deviation 2); the settlement is
+  *** a pure state change -- [release-*] discharges the chain later
+  *** -------------------------------------------------------------------------
+
+  *** promise timeout: settle as timedout (resolved for timers), fulfill task.
+  *** a promise WITH a task is always armed (Lean: promiseCreate arms external
+  *** promises -- and target implies task -- while taskCreate arms all)
+  crl [promise-timeout] :
+     < I : Promise | pState: pending, tags: TG, timeoutAt: D0, settledAt: ON, AS >
+     < I : Task | tState: KS, ttl: ON', pid: OO, resumes: RS, lease: OL, AS' >
+     < clock : Clock | now: T, AS'' >
+  => < I : Promise | pState: timeoutState(TG), tags: TG, timeoutAt: D0,
+                     settledAt: D0, AS >
+     < I : Task | tState: tFulfilled, ttl: noNat, pid: noOid, resumes: mtIds,
+                  lease: noNat, AS' >
+     < clock : Clock | now: T, AS'' >
+  if D0 <= T .
+
+  *** a promise WITHOUT a task is armed iff external (in practice: a timer,
+  *** since a target tag always co-creates a task)
+  crl [promise-timeout-notask] :
+     < I : Promise | pState: pending, tags: TG, timeoutAt: D0, settledAt: ON, AS >
+     < reg : Registry | ts: TSet, AS' >
+     < clock : Clock | now: T, AS'' >
+  => < I : Promise | pState: timeoutState(TG), tags: TG, timeoutAt: D0,
+                     settledAt: D0, AS >
+     < reg : Registry | ts: TSet, AS' >
+     < clock : Clock | now: T, AS'' >
+  if D0 <= T and external(TG) and not (I in TSet) .
+
+  *** NOTE: no retry-timeout rule. Emitted executes persist in the soup with
+  *** keyed dedup, so every re-send schedule is conformant by construction.
+
+  *** lease expiry: back to pending, re-dispatch
+  crl [task-lease-timeout] :
+     < I : Task | tState: tAcquired, version: V, ttl: ON, pid: OO,
+                  lease: D, AS >
+     < I : Promise | tags: TG, AS' >
+     < clock : Clock | now: T, AS'' >
+  => < I : Task | tState: tPending, version: V, ttl: noNat, pid: noOid,
+                  lease: noNat, AS >
+     < I : Promise | tags: TG, AS' >
+     < clock : Clock | now: T, AS'' >
+     execute(tgt(TG), I, V)
+  if D <= T .
+
+  *** the one dispatch the machine still owes: a delayed start, fired once
+  crl [task-dispatch] :
+     < I : Task | tState: tPending, version: V, notBefore: D, AS >
+     < I : Promise | tags: TG, AS' >
+     < clock : Clock | now: T, AS'' >
+  => < I : Task | tState: tPending, version: V, notBefore: noNat, AS >
+     < I : Promise | tags: TG, AS' >
+     < clock : Clock | now: T, AS'' >
+     execute(tgt(TG), I, V)
+  if D <= T .
+
+  *** schedule fire: one occurrence per rewrite; catch-up = the rule refires
+  *** while nextRunAt <= now. The occurrence promise is created BACKDATED to
+  *** its cron instant (Lean catchUp calls promiseCreate with now := cronTime).
+  crl [schedule-fire] :
+     < S : Sched | period: N, promiseTimeout: PT, promiseParam: PR,
+                   promiseTags: TG, nextRunAt: D, lastRunAt: ON, AS >
+     < reg : Registry | ps: PSet, ts: TSet, AS' >
+     < clock : Clock | now: T, AS'' >
+  => < S : Sched | period: N, promiseTimeout: PT, promiseParam: PR,
+                   promiseTags: TG, nextRunAt: D + N, lastRunAt: D, AS >
+     < reg : Registry | ps: (occ(S, D) ; PSet),
+                        ts: addIf(hasTarget(TG), occ(S, D), TSet), AS' >
+     < clock : Clock | now: T, AS'' >
+     (if PT > 0 then createLive(occ(S, D), D + PT, PR, TG, D)
+                else createExpired(occ(S, D), D + PT, PR, TG) fi)
+  if D <= T and not (occ(S, D) in PSet) .
+
+  *** occurrence id collision (re-created schedule): advance without creating
+  crl [schedule-fire-collision] :
+     < S : Sched | period: N, nextRunAt: D, lastRunAt: ON, AS >
+     < reg : Registry | ps: PSet, AS' >
+     < clock : Clock | now: T, AS'' >
+  => < S : Sched | period: N, nextRunAt: D + N, lastRunAt: D, AS >
+     < reg : Registry | ps: PSet, AS' >
+     < clock : Clock | now: T, AS'' >
+  if D <= T and (occ(S, D) in PSet) .
+
+endm
+
+*** ===========================================================================
+*** Scenario: the timeout-vs-resume race (00-resume.lean's protocol decision).
+***
+*** Awaiter promise 'b (target 'w, timeoutAt 5) has its task suspended,
+*** awaiting promise 'a (timeoutAt 9, no target). A client settle of 'a is in
+*** flight. The soup explores every interleaving of
+***     settle('a) delivery  x  release of 'b's callback  x  'b's timeout at 5.
+*** ===========================================================================
+
+mod RESONATE-RACE is
+  including RESONATE .
+
+  op raceBase : -> Configuration .
+  eq raceBase =
+    < clock : Clock | now: 0, horizon: 8 >
+    < reg : Registry | ps: ('a ; 'b), ts: 'b, ss: mtIds >
+    < 'a : Promise | pState: pending, param: noValue, value: noValue,
+                     tags: noTags, timeoutAt: 9, createdAt: 0, settledAt: noNat,
+                     callbacks: 'b, listeners: mtIds >
+    < 'b : Promise | pState: pending, param: noValue, value: noValue,
+                     tags: target('w), timeoutAt: 5, createdAt: 0, settledAt: noNat,
+                     callbacks: mtIds, listeners: mtIds >
+    < 'b : Task | tState: tSuspended, version: 2, ttl: noNat, pid: noOid,
+                  resumes: mtIds, lease: noNat, notBefore: noNat > .
+
+  op init : -> Configuration .
+  eq init = raceBase promSettle('c, 'a, resolved, vA) .
+
+  *** does any run wake b's worker? (execute lingers once emitted -- no
+  *** worker rules consume it -- so it is stable evidence of a wake)
+  op wokeB : Configuration -> Bool .
+  eq wokeB(execute('w, 'b, V:Nat) C:Configuration) = true .
+  eq wokeB(C:Configuration) = false [owise] .
+
+endm
+
+*** 1. A wake is reachable: settle 'a and deliver the resume before t=5.
+search [1] in RESONATE-RACE : init =>* execute('w, 'b, 2) C:Configuration .
+
+*** 2. Timeout can win outright: a completed run in which 'b was never woken.
+search [1] in RESONATE-RACE : init =>! C:Configuration
+  such that not wokeB(C:Configuration) .
+
+*** 3. TIMEOUT ALWAYS WINS (the invariant): no reachable state has 'b already
+***    timed out while its task is back in circulation. Expect NO solution.
+search in RESONATE-RACE : init =>*
+  C:Configuration
+  < 'b : Promise | pState: rejectedTimedout, AS:AttributeSet >
+  < 'b : Task | tState: tPending, AS':AttributeSet > .
