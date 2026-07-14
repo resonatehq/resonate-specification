@@ -4,6 +4,11 @@ open ServerModel
 
 def taskCreate (req : TaskCreateReq) (now : Nat) : M TaskCreateRes := do
   let a := req.action
+  -- The carried action must name a resonate:target — a task with no address
+  -- could never be dispatched. A malformed request, rejected with highest
+  -- precedence: before the lookup, so it applies on existing ids too.
+  if !(a.tags.has "resonate:target") then
+    return { status := 400 }
   match ← getPromise a.id with
   | none =>
       if a.timeoutAt > now then

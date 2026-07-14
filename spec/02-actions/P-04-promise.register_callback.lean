@@ -3,6 +3,11 @@ import «01-objects».«state»
 open ServerModel
 
 def promiseRegisterCallback (req : PromiseRegisterCallbackReq) (now : Nat) : M PromiseRegisterCallbackRes := do
+  -- A promise cannot await itself: the callback it registers could only be
+  -- fired by its own settlement — a deadlock by construction. A malformed
+  -- request, rejected with highest precedence, before existence is consulted.
+  if req.awaited == req.awaiter then
+    return { status := 400 }
   match ← getPromise req.awaited with
   | none =>
       return { status := 404 }
