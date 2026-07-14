@@ -3,6 +3,11 @@ import «02-actions».«00-resume»
 open ServerModel
 
 def promiseSettle (req : PromiseSettleReq) (now : Nat) : M PromiseSettleRes := do
+  -- Request validation has highest precedence: a non-client-settable state
+  -- is a malformed request, rejected before any state is consulted (400
+  -- precedes the 404 on a missing promise and the sticky terminal echo).
+  if !req.state.clientSettable then
+    return { status := 400 }
   match ← getPromise req.id with
   | none =>
       return { status := 404 }

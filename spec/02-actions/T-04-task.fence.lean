@@ -3,7 +3,17 @@ import «02-actions».«P-03-promise.settle»
 
 open ServerModel
 
+/-- The promise id the fenced action operates on. -/
+def ServerModel.TaskFenceAction.targetId : TaskFenceAction → String
+  | .create r => r.id
+  | .settle r => r.id
+
 def taskFence (req : TaskFenceReq) (now : Nat) : M TaskFenceRes := do
+  -- A fence aimed at its own promise makes no sense: settling yourself is
+  -- task.fulfill's job, and allowing it would fulfill the fencing task as a
+  -- side effect of its own action. Rejected before any state is consulted.
+  if req.action.targetId == req.id then
+    return { status := 400 }
   match ← getTask req.id with
   | none =>
       return { status := 404 }

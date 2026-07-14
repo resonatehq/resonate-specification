@@ -3,6 +3,12 @@ import «01-objects».«state»
 open ServerModel
 
 def taskSuspend (req : TaskSuspendReq) (now : Nat) : M TaskSuspendRes := do
+  -- A task awaiting its own promise is a self-deadlock by construction: the
+  -- callback it registers could only be fired by its own completion. A
+  -- malformed request, rejected with highest precedence — before existence,
+  -- state, or version are consulted.
+  if req.actions.any (·.awaited == req.id) then
+    return { status := 400 }
   match ← getTask req.id with
   | none =>
       return { status := 404 }
