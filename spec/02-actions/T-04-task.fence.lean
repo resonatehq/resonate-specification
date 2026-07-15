@@ -9,9 +9,6 @@ def ServerModel.TaskFenceAction.targetId : TaskFenceAction → String
   | .settle r => r.id
 
 def taskFence (req : TaskFenceReq) (now : Nat) : M TaskFenceRes := do
-  -- A fence aimed at its own promise makes no sense: settling yourself is
-  -- task.fulfill's job, and allowing it would fulfill the fencing task as a
-  -- side effect of its own action. Rejected before any state is consulted.
   if req.action.targetId == req.id then
     return { status := 400 }
   match ← getTask req.id with

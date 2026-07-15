@@ -13,8 +13,6 @@ def taskContinue (req : TaskContinueReq) (now : Nat) : M TaskContinueRes := do
       | none =>
           return { status := 404 }
       | some p =>
-          -- TIMEOUT ALWAYS WINS: continuing a task whose promise is logically
-          -- expired is futile; reject 409, as release/fulfill/suspend do.
           if p.state != .pending || p.timeoutAt ≤ now then return { status := 409 }
           let t := { t with state := .pending }
           setTask t

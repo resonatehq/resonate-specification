@@ -10,8 +10,6 @@ def ServerModel.addressValid (a : String) : Bool :=
   (a.startsWith "poll://" && a.contains '@')
 
 def promiseRegisterListener (req : PromiseRegisterListenerReq) (now : Nat) : M PromiseRegisterListenerRes := do
-  -- An undeliverable address is a malformed request, rejected before any
-  -- state is consulted (400 precedes the 404 on a missing promise).
   if !addressValid req.address then
     return { status := 400 }
   match ← getPromise req.awaited with
