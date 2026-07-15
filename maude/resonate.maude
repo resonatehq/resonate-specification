@@ -172,7 +172,6 @@ mod RESONATE is
   *** Clock / Registry (registry = existence oracle: Maude cannot match on the
   *** ABSENCE of an object in the soup, so creates and 404s consult id sets)
   op now:_     : Nat -> Attribute [ctor gather (&)] .
-  op horizon:_ : Nat -> Attribute [ctor gather (&)] .
   op ps:_ : IdSet -> Attribute [ctor gather (&)] .
   op ts:_ : IdSet -> Attribute [ctor gather (&)] .
   op ss:_ : IdSet -> Attribute [ctor gather (&)] .
@@ -233,7 +232,7 @@ mod RESONATE is
 
   vars A B W    : Oid .            *** addresses / pids
   vars I J K S  : Oid .            *** promise / task / schedule ids
-  vars T D D' D0 CT H TTL N PT : Nat .
+  vars T D D' D0 CT TTL N PT : Nat .
   vars V V'     : Nat .
   vars PS PS' QS : PromiseState .
   vars KS       : TaskState .
@@ -289,14 +288,50 @@ mod RESONATE is
       else none fi) .
 
   *** -------------------------------------------------------------------------
-  *** time -- the environment's clock; every "will happen" obligation is
-  *** gated on it. Bounded by horizon to keep the state space finite.
+  *** time -- event-driven sampling, the Real-Time Maude idiom adapted to a
+  *** SOFT-time system. [tick] jumps the clock to the NEXT relevant instant:
+  *** the least future deadline any guard can observe (every pending
+  *** promise's timeoutAt -- armed or not, since settle/release guards read
+  *** them -- task lease and notBefore, schedule nextRunAt, and, via the
+  *** trace checker's inst equation, logged request times). No instant is
+  *** URGENT -- nothing must fire when the clock reaches it -- so firing
+  *** arbitrarily late is reached by hopping instants without firing:
+  *** jump-to-next is the minimal complete sampler. When no future instant
+  *** exists [tick] is disabled and runs terminate naturally (no horizon).
+  *** The state is wrapped in {_} so [tick] can survey the whole soup.
   *** -------------------------------------------------------------------------
 
+  sort GlobalState .
+  op {_} : Configuration -> GlobalState [ctor] .
+
+  op minOpt : OptNat OptNat -> OptNat .
+  eq minOpt(noNat, ON) = ON .
+  eq minOpt(N, noNat) = N .
+  eq minOpt(N, D) = min(N, D) .
+
+  op fut : OptNat Nat -> OptNat .       *** keep only instants strictly ahead
+  eq fut(noNat, T) = noNat .
+  eq fut(D, T) = if D > T then D else noNat fi .
+
+  *** an object's next observable instant
+  op inst : Object Nat -> OptNat .
+  eq inst(< I : Promise | pState: PS, timeoutAt: D, AS >, T) =
+       if PS == pending then fut(D, T) else noNat fi .
+  eq inst(< I : Task | lease: OL, notBefore: ON, AS >, T) =
+       minOpt(fut(OL, T), fut(ON, T)) .
+  eq inst(< S : Sched | nextRunAt: D, AS >, T) = fut(D, T) .
+  eq inst(O:Object, T) = noNat [owise] .
+
+  op nextInstant : Configuration Nat -> OptNat .
+  eq nextInstant(none, T) = noNat .
+  eq nextInstant(O:Object C:Configuration, T) =
+       minOpt(inst(O:Object, T), nextInstant(C:Configuration, T)) .
+  eq nextInstant(M:Msg C:Configuration, T) = nextInstant(C:Configuration, T) .
+
   crl [tick] :
-     < clock : Clock | now: T, horizon: H >
-  => < clock : Clock | now: T + 1, horizon: H >
-  if T < H .
+     { < clock : Clock | now: T, AS > C:Configuration }
+  => { < clock : Clock | now: D, AS > C:Configuration }
+  if D := nextInstant(C:Configuration, T) .
 
   *** -------------------------------------------------------------------------
   *** P-01 promise.get
@@ -1192,7 +1227,7 @@ mod RESONATE-RACE is
 
   op raceBase : -> Configuration .
   eq raceBase =
-    < clock : Clock | now: 0, horizon: 8 >
+    < clock : Clock | now: 0 >
     < reg : Registry | ps: ('a ; 'b), ts: 'b, ss: mtIds >
     < 'a : Promise | pState: pending, param: noValue, value: noValue,
                      tags: noTags, timeoutAt: 9, createdAt: 0, settledAt: noNat,
@@ -1214,16 +1249,16 @@ mod RESONATE-RACE is
 
 endm
 
-*** 1. A wake is reachable: settle 'a and deliver the resume before t=5.
-search [1] in RESONATE-RACE : init =>* execute('w, 'b, 2) C:Configuration .
+*** 1. A wake is reachable: settle 'a and release the callback before t=5.
+search [1] in RESONATE-RACE : {init} =>* {execute('w, 'b, 2) C:Configuration} .
 
 *** 2. Timeout can win outright: a completed run in which 'b was never woken.
-search [1] in RESONATE-RACE : init =>! C:Configuration
+search [1] in RESONATE-RACE : {init} =>! {C:Configuration}
   such that not wokeB(C:Configuration) .
 
 *** 3. TIMEOUT ALWAYS WINS (the invariant): no reachable state has 'b already
 ***    timed out while its task is back in circulation. Expect NO solution.
-search in RESONATE-RACE : init =>*
-  C:Configuration
-  < 'b : Promise | pState: rejectedTimedout, AS:AttributeSet >
-  < 'b : Task | tState: tPending, AS':AttributeSet > .
+search in RESONATE-RACE : {init} =>*
+  { C:Configuration
+    < 'b : Promise | pState: rejectedTimedout, AS:AttributeSet >
+    < 'b : Task | tState: tPending, AS':AttributeSet > } .

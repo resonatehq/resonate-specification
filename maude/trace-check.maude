@@ -51,8 +51,20 @@ mod TRACE-CHECK is
   op driver : -> Oid [ctor] .
   op script:_ : DEventList -> Attribute [ctor gather (&)] .
 
-  var M : Msg .   var EL : DEventList .   var S T : Nat .   var VW : View .
+  var M : Msg .   var EL : DEventList .   var S T T' : Nat .   var VW : View .
   var C : Oid .   var AS : AttributeSet .
+
+  *** the log's future request times are sample instants for [tick]: the
+  *** clock must be able to stop exactly where the implementation acted
+  eq inst(< driver : Driver | script: EL >, T) = nextReq(EL, T) .
+
+  op nextReq : DEventList Nat -> OptNat .
+  eq nextReq(nilE, T) = noNat .
+  eq nextReq(req(T', M) :: EL, T) =
+       minOpt(if T' > T then T' else noNat fi, nextReq(EL, T)) .
+  eq nextReq(res(C, S) :: EL, T) = nextReq(EL, T) .
+  eq nextReq(resV(C, S, VW) :: EL, T) = nextReq(EL, T) .
+  eq nextReq(msg(M) :: EL, T) = nextReq(EL, T) .
 
   *** inject the request at its logged time (from = corr is inside M, so the
   *** machine will reply resp(corr, ...)). Non-blocking: the script advances,
@@ -121,11 +133,11 @@ mod TRACE-DEMO is
 endm
 
 *** 1. expect a solution: the machine can reproduce this log
-search [1] in TRACE-DEMO : traceOk =>*
-  C:Configuration < driver : Driver | script: nilE > .
+search [1] in TRACE-DEMO : {traceOk} =>*
+  { C:Configuration < driver : Driver | script: nilE > } .
 
 *** 2. expect NO solution: no interleaving of the machine's internal
 ***    transitions wakes 'b after its deadline -- the log is not a behavior
 ***    of the spec, so the implementation that produced it has the bug
-search [1] in TRACE-DEMO : traceBad =>*
-  C:Configuration < driver : Driver | script: nilE > .
+search [1] in TRACE-DEMO : {traceBad} =>*
+  { C:Configuration < driver : Driver | script: nilE > } .
