@@ -105,6 +105,7 @@ structure ServerState where
   promises         : List PromiseObject   := []
   tasks            : List TaskObject       := []
   schedules        : List Schedule         := []
+  deferred         : List ResumeReq        := []
   promiseTimeouts  : List PromiseTimeout   := []
   taskTimeouts     : List TaskTimeout       := []
   scheduleTimeouts : List ScheduleTimeout  := []
@@ -175,5 +176,24 @@ def setMessage (address : String) (msg : Message) : M Unit :=
     let entry := OutboxEntry.mk address msg
     let key   := entry.key
     { s with outbox := entry :: s.outbox.filter (fun e => e.key != key) }
+
+/-- Record a resume obligation the server invokes on itself later. Keyed
+    collapse-on-set like `setMessage` and `setTaskTimeout` -- but here the
+    key is defensive rather than load-bearing: `addCallback` dedups, a
+    promise settles at most once, and a settled awaited is never
+    re-registered, so each pair is deferred at most once over any run.
+    No time field: all call sites would pass `now`, and *later* is not
+    *a time* -- the drain supplies its own clock to the deadline guard. -/
+def defer (r : ResumeReq) : M Unit :=
+  modify fun s =>
+    { s with deferred :=
+        r :: s.deferred.filter (fun e =>
+          !(e.awaited == r.awaited && e.awaiter == r.awaiter)) }
+
+def undefer (r : ResumeReq) : M Unit :=
+  modify fun s =>
+    { s with deferred :=
+        s.deferred.filter (fun e =>
+          !(e.awaited == r.awaited && e.awaiter == r.awaiter)) }
 
 end ServerModel

@@ -16,6 +16,7 @@ The Resonate protocol, specified as an executable **abstract machine** in Lean 4
 [`state.lean`](spec/01-objects/state.lean)
 
 - **objects** — promises, tasks, and schedules
+- **deferred** — resume obligations the server records at settlement and invokes on itself later
 - **timeouts** — obligations the environment fires later, as internal transitions
 - **outbox** — messages awaiting delivery: `execute` dispatches a task to a worker, `unblock` notifies a listener of a settled promise
 
@@ -30,10 +31,11 @@ The atomic operations of the machine ([`state.lean`](spec/01-objects/state.lean)
 | promises | `getPromise` / `setPromise` |
 | tasks | `getTask` / `setTask` |
 | schedules | `getSchedule` / `setSchedule` / `delSchedule` |
+| deferred | `defer` / `undefer` |
 | timeouts | `setPromiseTimeout` / `setTaskTimeout` / `setScheduleTimeout` / `del…Timeout` |
 | outbox | `setMessage` |
 
-Handlers touch state only through effects — the one exception is the settlement scrub, inlined at the three settlement sites. Together they are the contract a concrete implementation must realize.
+Handlers touch state only through effects. Together they are the contract a concrete implementation must realize. Settlement's write set, restricted to promises and tasks, is `{p.id}`: settle neither reads nor writes any promise but its own — resumes are recorded as deferred work, discharged by the drain.
 
 ### Handlers
 
@@ -92,7 +94,7 @@ Conventions the whole model leans on:
 
 | Handler | Transition |
 |---|---|
-| [`resume`](spec/02-actions/00-resume.lean) | The settlement chain: wake a suspended awaiter (re-pending + `execute`) or record the resume on an active one. |
+| [`resume`](spec/02-actions/03-resume.lean) | Drain a deferred resume: wake a suspended awaiter (re-pending + `execute`) or record the trigger on an active one; the deadline guard re-checks at drain time (timeout always wins). |
 | [`timeouts`](spec/02-actions/02-timeouts.lean) | Environment-fired transitions: promise timeout, task retry, lease expiry, schedule fire (with catch-up). |
 
 ## Build

@@ -1,4 +1,4 @@
-import «02-actions».«00-resume»
+import «01-objects».«state»
 
 open ServerModel
 
@@ -23,15 +23,8 @@ def taskFulfill (req : TaskFulfillReq) (now : Nat) : M TaskFulfillRes := do
       delPromiseTimeout p.id
       setTask { t with state := .fulfilled, pid := none, ttl := none, resumes := [] }
       delTaskTimeout t.id
-      -- settlement scrub: p can never be resumed again; drop its dead registrations
-      modify fun s =>
-        { s with promises := s.promises.map fun q =>
-            if q.state == .pending then
-              { q with callbacks := q.callbacks.filter (· != p.id) }
-            else
-              q }
       for address in listeners do
         setMessage address (.unblock p.toRecord)
       for awaiterId in callbacks do
-        enqueueResume p.id awaiterId now
+        defer { awaited := p.id, awaiter := awaiterId }
       return { status := 200, promise := some p.toRecord }
