@@ -3,11 +3,21 @@ import «01-objects».«state»
 open ServerModel
 
 def taskSuspend (req : TaskSuspendReq) (now : Nat) : M TaskSuspendRes := do
-  -- A task awaiting its own promise is a self-deadlock by construction: the
-  -- callback it registers could only be fired by its own completion. A
-  -- malformed request, rejected with highest precedence — before existence,
-  -- state, or version are consulted.
+  -- Request validation, highest precedence — everything rejectable by
+  -- inspecting the request alone is 400, before existence, state, or
+  -- version are consulted:
+  -- suspending on nothing is not a suspension;
+  if req.actions.isEmpty then
+    return { status := 400 }
+  -- a task awaiting its own promise is a self-deadlock by construction (the
+  -- callback it registers could only be fired by its own completion);
   if req.actions.any (·.awaited == req.id) then
+    return { status := 400 }
+  -- and the same awaited id twice in one payload is malformed. Re-registration
+  -- ACROSS requests stays idempotent via addCallback: a task woken by one
+  -- awaited promise legitimately re-suspends on the others.
+  let awaitedIds := req.actions.map (·.awaited)
+  if awaitedIds.eraseDups.length != awaitedIds.length then
     return { status := 400 }
   match ← getTask req.id with
   | none =>
