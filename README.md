@@ -48,7 +48,7 @@ composed from effects. Deterministic and total; there is no hidden clock — tim
 Conventions the whole model leans on:
 
 - **Projection** — a pending promise past `timeoutAt` is *observed* as already settled (`resolved` for timers, `rejectedTimedout` otherwise) even before its timeout transition persists that fact.
-- **Validation** — anything rejectable by inspecting the request alone is `400`, with highest precedence: before existence, state, or version are consulted. Examples: settling to a non-client-settable state, self-await, duplicate or empty awaited lists, an untargeted `task.create` action, an undeliverable listener address.
+- **Validation** — anything rejectable by inspecting the request alone is `400`, with highest precedence: before existence, state, or version are consulted. Examples: settling to a non-settable state, self-await, duplicate or empty awaited lists, an untargeted `task.create` action, an undeliverable listener address.
 
 ## Protocol Handlers
 

@@ -4,8 +4,8 @@ open ServerModel
 
 def taskFulfill (req : TaskFulfillReq) (now : Nat) : M TaskFulfillRes := do
   -- Same validation as promise.settle, same precedence: the carried settle
-  -- must name a client-settable state before anything else is considered.
-  if !req.action.state.clientSettable then
+  -- must name a settable state before anything else is considered.
+  if !req.action.state.settable then
     return { status := 400 }
   match ← getTask req.id with
   | none =>

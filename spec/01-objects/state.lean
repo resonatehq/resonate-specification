@@ -14,7 +14,7 @@ def Tags.isTimer (t : Tags) : Bool :=
 /-- The terminal states a client may settle into. `pending` is not a
     settlement, and `rejectedTimedout` is server-owned: only the timeout
     path writes it, so a client can never forge one. -/
-def PromiseState.clientSettable : PromiseState → Bool
+def PromiseState.settable : PromiseState → Bool
   | .resolved | .rejected | .rejectedCanceled => true
   | _ => false
 
