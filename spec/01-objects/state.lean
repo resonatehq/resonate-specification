@@ -139,6 +139,32 @@ structure ServerConfig where
   retryTimeout : Nat := 5000
   deriving Repr
 
+/-- GHOST -- the addressable locations of the state, as the effects key
+    them. One constructor per keyed component; `taskTimeout` is keyed by
+    id alone (coarser than `setTaskTimeout`'s (id, kind) upsert, matching
+    `delTaskTimeout`'s id-wide delete); `message` uses `OutboxEntry.key`.
+    Config is not a location: no effect writes it, so reading it is
+    reading a constant. Exists only for the effect trace below. -/
+inductive Loc
+  | promise         (id : String)
+  | task            (id : String)
+  | schedule        (id : String)
+  | promiseTimeout  (id : String)
+  | taskTimeout     (id : String)
+  | scheduleTimeout (id : String)
+  | message         (key : String)
+  | deferred        (awaited awaiter : String)
+  deriving Repr, BEq, DecidableEq
+
+/-- GHOST -- one entry of the effect trace: each effect records itself as
+    a read or a write of its location. Carries no behavior; exists so the
+    read/write discipline (`05-discipline`) is statable over the effect
+    order, which the state monad otherwise erases. -/
+inductive Eff
+  | read  (loc : Loc)
+  | write (loc : Loc)
+  deriving Repr, BEq, DecidableEq
+
 structure ServerState where
   config           : ServerConfig         := {}
   promises         : List PromiseObject   := []
@@ -149,31 +175,47 @@ structure ServerState where
   taskTimeouts     : List TaskTimeout       := []
   scheduleTimeouts : List ScheduleTimeout  := []
   outbox           : List OutboxEntry       := []
+  /-- GHOST -- the effect trace, in program order. No effect reads it, no
+      handler branches on it; erasing it changes nothing observable. It is
+      the instrument on which `05-discipline` states the read/write
+      discipline of handlers. -/
+  trace            : List Eff              := []
   deriving Repr
 
 def ServerState.init : ServerState := {}
 
 abbrev M := StateM ServerState
 
-def getPromise (id : String) : M (Option PromiseObject) :=
+/-- GHOST -- append one entry to the effect trace. -/
+def logEff (e : Eff) : M Unit :=
+  modify fun s => { s with trace := s.trace ++ [e] }
+
+def getPromise (id : String) : M (Option PromiseObject) := do
+  logEff (.read (.promise id))
   return (← get).promises.find? (·.id == id)
 
-def setPromise (p : PromiseObject) : M Unit :=
+def setPromise (p : PromiseObject) : M Unit := do
+  logEff (.write (.promise p.id))
   modify fun s => { s with promises := p :: s.promises.filter (·.id != p.id) }
 
-def getTask (id : String) : M (Option TaskObject) :=
+def getTask (id : String) : M (Option TaskObject) := do
+  logEff (.read (.task id))
   return (← get).tasks.find? (·.id == id)
 
-def setTask (t : TaskObject) : M Unit :=
+def setTask (t : TaskObject) : M Unit := do
+  logEff (.write (.task t.id))
   modify fun s => { s with tasks := t :: s.tasks.filter (·.id != t.id) }
 
-def getSchedule (id : String) : M (Option Schedule) :=
+def getSchedule (id : String) : M (Option Schedule) := do
+  logEff (.read (.schedule id))
   return (← get).schedules.find? (·.id == id)
 
-def setSchedule (sch : Schedule) : M Unit :=
+def setSchedule (sch : Schedule) : M Unit := do
+  logEff (.write (.schedule sch.id))
   modify fun s => { s with schedules := sch :: s.schedules.filter (·.id != sch.id) }
 
-def delSchedule (id : String) : M Unit :=
+def delSchedule (id : String) : M Unit := do
+  logEff (.write (.schedule id))
   modify fun s => { s with schedules := s.schedules.filter (·.id != id) }
 
 /-- Next cron fire time strictly after the given instant. -/
@@ -182,35 +224,42 @@ opaque nextCron : (cron : String) → (after : Nat) → Nat
 /-- Expand a schedule's promise-id template against one occurrence. -/
 opaque expand : (template id : String) → (timestamp : Nat) → String
 
-def setPromiseTimeout (id : String) (timeout : Nat) : M Unit :=
+def setPromiseTimeout (id : String) (timeout : Nat) : M Unit := do
+  logEff (.write (.promiseTimeout id))
   modify fun s =>
     { s with promiseTimeouts :=
         { id, timeout } :: s.promiseTimeouts.filter (·.id != id) }
 
-def delPromiseTimeout (id : String) : M Unit :=
+def delPromiseTimeout (id : String) : M Unit := do
+  logEff (.write (.promiseTimeout id))
   modify fun s =>
     { s with promiseTimeouts := s.promiseTimeouts.filter (·.id != id) }
 
-def setTaskTimeout (id : String) (kind timeout : Nat) : M Unit :=
+def setTaskTimeout (id : String) (kind timeout : Nat) : M Unit := do
+  logEff (.write (.taskTimeout id))
   modify fun s =>
     { s with taskTimeouts :=
         { id, kind, timeout } ::
         s.taskTimeouts.filter (fun t => !(t.id == id && t.kind == kind)) }
 
-def delTaskTimeout (id : String) : M Unit :=
+def delTaskTimeout (id : String) : M Unit := do
+  logEff (.write (.taskTimeout id))
   modify fun s =>
     { s with taskTimeouts := s.taskTimeouts.filter (·.id != id) }
 
-def setScheduleTimeout (id : String) (timeout : Nat) : M Unit :=
+def setScheduleTimeout (id : String) (timeout : Nat) : M Unit := do
+  logEff (.write (.scheduleTimeout id))
   modify fun s =>
     { s with scheduleTimeouts :=
         { id, timeout } :: s.scheduleTimeouts.filter (·.id != id) }
 
-def delScheduleTimeout (id : String) : M Unit :=
+def delScheduleTimeout (id : String) : M Unit := do
+  logEff (.write (.scheduleTimeout id))
   modify fun s =>
     { s with scheduleTimeouts := s.scheduleTimeouts.filter (·.id != id) }
 
-def setMessage (address : String) (msg : Message) : M Unit :=
+def setMessage (address : String) (msg : Message) : M Unit := do
+  logEff (.write (.message (OutboxEntry.mk address msg).key))
   modify fun s =>
     let entry := OutboxEntry.mk address msg
     let key   := entry.key
@@ -223,13 +272,15 @@ def setMessage (address : String) (msg : Message) : M Unit :=
     re-registered, so each pair is deferred at most once over any run.
     No time field: all call sites would pass `now`, and *later* is not
     *a time* -- the drain supplies its own clock to the deadline guard. -/
-def defer (r : ResumeReq) : M Unit :=
+def defer (r : ResumeReq) : M Unit := do
+  logEff (.write (.deferred r.awaited r.awaiter))
   modify fun s =>
     { s with deferred :=
         r :: s.deferred.filter (fun e =>
           !(e.awaited == r.awaited && e.awaiter == r.awaiter)) }
 
-def undefer (r : ResumeReq) : M Unit :=
+def undefer (r : ResumeReq) : M Unit := do
+  logEff (.write (.deferred r.awaited r.awaiter))
   modify fun s =>
     { s with deferred :=
         s.deferred.filter (fun e =>

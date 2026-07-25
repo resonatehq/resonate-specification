@@ -37,6 +37,8 @@ The atomic operations of the machine ([`state.lean`](spec/01-objects/state.lean)
 
 Handlers touch state only through effects. Together they are the contract a concrete implementation must realize. Settlement's write set, restricted to promises and tasks, is `{p.id}`: settle neither reads nor writes any promise but its own — resumes are recorded as deferred work, discharged by the drain.
 
+Effect order obeys a **read/write discipline**, stated and machine-checked over a ghost effect trace in [`05-discipline.lean`](spec/02-actions/05-discipline.lean): no transition reads a location it has already written — every read is served by the pre-state, so a handler is a pure decision over a snapshot applied as a batch of writes (one consistent read set, one write-back; no read-your-writes). The strict form — a read phase then a write phase — is deliberately not the invariant: settlement writes its promise before reading its co-keyed task, the task timeouts write task state before reading the promise for the dispatch target, and the per-item loops (`task.suspend`, `task.heartbeat`) alternate over distinct keys. `drain` marks the boundary: as a composition of τ-steps it does read its own writes across steps — that is how a second resume buffers into a task the first one woke — which is why it is a schedule, not a transition.
+
 ### Handlers
 
 Every handler is a pure function
