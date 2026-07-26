@@ -41,13 +41,15 @@ def taskCreate (req : TaskCreateReq) (now : Nat) : M TaskCreateRes := do
       match ← getTask p.id with
       | some t =>
           if t.state == .fulfilled then
-            return { status := 200, task := some t.toRecord, promise := some p.toRecord }
+            -- PROJECT: the stored record may be logically settled; every
+            -- promise-bearing response serves the projected view.
+            return { status := 200, task := some t.toRecord, promise := some (p.project now).toRecord }
           else if t.state == .pending then
             let t := { t with state := .acquired, version := t.version + 1, ttl := some req.ttl, pid := some req.pid, resumes := [] }
             setTask t
             delTaskTimeout t.id
             setTaskTimeout t.id 1 (now + req.ttl)
-            return { status := 200, task := some t.toRecord, promise := some p.toRecord }
+            return { status := 200, task := some t.toRecord, promise := some (p.project now).toRecord }
           else
             return { status := 409 }
       | none =>
