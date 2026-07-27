@@ -64,23 +64,26 @@ def onTaskLeaseTimeout (id : String) (now : Nat) : M Unit := do
         | some p =>
             setMessage ((p.tags.get? "resonate:target").getD "") (.execute t.id t.version)
 
-partial def catchUp (now : Nat) (s : Schedule) : M Schedule := do
-  if s.nextRunAt ≤ now then
+def catchUp (fuel : Nat) (now : Nat) (s : Schedule) : M Schedule := do
+  if fuel = 0 then
+    return s
+  else if s.nextRunAt ≤ now then
     let cronTime := s.nextRunAt
     let promiseId := expand s.promiseId s.id cronTime
     let _ ← promiseCreate
       { id := promiseId, timeoutAt := cronTime + s.promiseTimeout,
         param := s.promiseParam, tags := s.promiseTags } cronTime
-    catchUp now { s with lastRunAt := some cronTime, nextRunAt := nextCron s.cron cronTime }
+    catchUp (fuel - 1) now { s with lastRunAt := some cronTime, nextRunAt := nextCron s.cron cronTime }
   else
     return s
+termination_by fuel
 
-def onScheduleTimeout (id : String) (now : Nat) : M Unit := do
+def onScheduleTimeout (fuel : Nat) (id : String) (now : Nat) : M Unit := do
   match ← getSchedule id with
   | none =>
       pure ()
   | some s0 =>
-      let s ← catchUp now s0
+      let s ← catchUp fuel now s0
       setSchedule s
       delScheduleTimeout s.id
       setScheduleTimeout s.id s.nextRunAt
