@@ -1,6 +1,12 @@
 # Resonate Specification
 
-The Resonate protocol, specified as an executable **abstract machine** in Lean 4: a state, a set of effects (atomic operations on the state) and a set of request handlers (transitions composed from effects). 
+The Resonate protocol, specified as an executable **abstract machine** in Lean 4: a state, a set of effects (atomic operations on the state), and a set of transitions composed from effects. This repository is the source of truth for the protocol; the Lean is authoritative.
+
+## Your Task
+
+You are an implementer — a developer or a coding agent. Your task is to derive an implementation on your target platform whose **observable behavior matches the observable behavior specified here**: for every request, the same response; for every transition, the same state change and the same emitted messages.
+
+Within that constraint you are free to make implementation decisions. The spec fixes *what* every transition does; it deliberately does not fix your storage engine, transport, concurrency model, or when internal transitions run. What must match and what you decide are listed [below](#what-must-match-and-what-you-decide).
 
 ## The Machine
 
@@ -17,7 +23,7 @@ The Resonate protocol, specified as an executable **abstract machine** in Lean 4
 
 - **objects** — promises, tasks, and schedules
 - **deferred** — resume obligations the server records at settlement and invokes on itself later
-- **timeouts** — obligations the environment fires later, as internal transitions
+- **timeouts** — obligations the environment fires later, as τ-steps
 - **outbox** — messages awaiting delivery: `execute` dispatches a task to a worker, `unblock` notifies a listener of a settled promise
 
 Wire-level records and request/response types are in [`types.lean`](spec/01-objects/types.lean).
@@ -35,24 +41,22 @@ The atomic operations of the machine ([`state.lean`](spec/01-objects/state.lean)
 | timeouts | `setPromiseTimeout` / `setTaskTimeout` / `setScheduleTimeout` / `del…Timeout` |
 | outbox | `setMessage` |
 
-Handlers touch state only through effects. Together they are the contract a concrete implementation must realize. Settlement's write set, restricted to promises and tasks, is `{p.id}`: settle neither reads nor writes any promise but its own — resumes are recorded as deferred work, discharged by the drain.
+Transitions touch state only through effects. Together the effects are the contract your storage layer must realize. Settlement's write set, restricted to promises and tasks, is `{p.id}`: settle neither reads nor writes any promise but its own — resumes are recorded as deferred work, discharged by the drain.
 
-### Handlers
+### Transitions
 
-Every handler is a pure function
+The machine has two kinds of transitions, and the distinction carries the implementer's largest freedom:
 
-```lean
-Req → (now : Nat) → M Res    -- M = StateM ServerState
-```
-
-composed from effects. Deterministic and total; there is no hidden clock — time enters only through `now`.
+- **Handlers** — request/response transitions. A client sends a `Req`, the machine responds with a `Res`. Every handler is a pure function `Req → (now : Nat) → M Res` (where `M = StateM ServerState`), deterministic and total; there is no hidden clock — time enters only through `now`.
+- **τ-steps** — internal transitions with no request/response nature: no request consumed, no response produced. A τ-step is enabled by state alone (a due timeout, a non-empty deferred set); *you* decide when it fires, the spec decides what firing does. A client can never observe a τ-step directly, only its consequences in later responses and outbox messages.
 
 Conventions the whole model leans on:
 
-- **Projection** — a pending promise past `timeoutAt` is *observed* as already settled (`resolved` for timers, `rejectedTimedout` otherwise) even before its timeout transition persists that fact.
+- **Projection** — a pending promise past `timeoutAt` is *observed* as already settled (`resolved` for timers, `rejectedTimedout` otherwise) even before its timeout τ-step persists that fact. Every promise-facing read projects; stored-vs-projected divergence is nowhere observable, which is what makes the materialization schedule yours to choose.
 - **Validation** — anything rejectable by inspecting the request alone is `400`, with highest precedence: before existence, state, or version are consulted. Examples: settling to a non-settable state, self-await, duplicate or empty awaited lists, an untargeted `task.create` action, an undeliverable listener address.
+- **Timeout always wins** — deadline guards re-check at fire time, so a late τ-step is always safe: an expired awaiter is never woken, its cleanup belongs to the timeout path.
 
-## Protocol Handlers
+## Handlers
 
 ### Promises
 
@@ -90,12 +94,44 @@ Conventions the whole model leans on:
 | S-03 | [`schedule.delete`](spec/02-actions/S-03-schedule.delete.lean) | Delete a schedule and disarm its timeout. |
 | S-04 | [`schedule.search`](spec/02-actions/S-04-schedule.search.lean) | Not yet specified (`501`). |
 
-### Internal Transitions
+## τ-Steps
 
-| Handler | Transition |
-|---|---|
-| [`resume`](spec/02-actions/03-resume.lean) | Drain a deferred resume: wake a suspended awaiter (re-pending + `execute`) or record the trigger on an active one; the deadline guard re-checks at drain time (timeout always wins). |
-| [`timeouts`](spec/02-actions/02-timeouts.lean) | Environment-fired transitions: promise timeout, task retry, lease expiry, schedule fire (with catch-up). |
+Exactly five exist ([`02-timeouts.lean`](spec/02-actions/02-timeouts.lean), [`03-resume.lean`](spec/02-actions/03-resume.lean)):
+
+| τ-step | Enabled when | Firing does |
+|---|---|---|
+| `onPromiseTimeout` | a promise timeout is due | Settle the promise at its deadline (stamped `timeoutAt`, byte-identical to the projection), fulfill its task, notify listeners, defer resumes. |
+| `onTaskRetryTimeout` | a pending task's retry is due | Re-arm the retry and re-enqueue the task's `execute`. |
+| `onTaskLeaseTimeout` | an acquired task's lease is due | Return the task to pending, re-arm the retry, re-enqueue its `execute`. |
+| `onScheduleTimeout` | a schedule's fire is due | Create the occurrence promise(s), catching up on missed occurrences, and re-arm the next fire. |
+| `onResume` (via `drain`) | the deferred set is non-empty | Wake a suspended awaiter (re-pending + `execute`) or record the trigger on an active one; the deadline guard re-checks at drain time (timeout always wins). |
+
+The only obligation on your τ-schedule is **weak fairness**: every continuously enabled τ-step eventually fires. Eager (inline within the triggering handler, the `step` combinator) and lazy (background workers, arbitrarily later) schedules are both admitted; the durable-execution guarantee ([`04-guarantee.lean`](spec/02-actions/04-guarantee.lean)) is stated over the τ-quotient precisely so that it holds at every stage of τ-lag.
+
+## What Must Match, and What You Decide
+
+**Must match** — the observable behavior:
+
+- Every handler's validation order, status codes, response contents, state changes, and emitted messages.
+- The projection on every promise-facing read.
+- Timeout always wins: an awaiter past its own deadline is never woken.
+- Wake conservation: a determined wake is held by some stage (callback → deferred → woken) in every state, until it materializes ([`04-guarantee.lean`](spec/02-actions/04-guarantee.lean)).
+- Time enters only through `now`, sampled once per transition.
+
+**You decide** — everything the spec deliberately leaves open:
+
+1. **τ-schedule** — when timeouts fire and when the drain runs: inline cascade, background workers, DB triggers, periodic sweep. Only weak fairness is required.
+2. **Projection materialization** — when (or whether) timed-out promises are physically settled; the projected record is byte-identical to what the timeout τ-step writes, so any schedule is conformant.
+3. **Storage** — how the six state components map onto your platform's storage, realizing the effects' contract (lookup by id, keyed collapse-on-set).
+4. **Atomicity and concurrency** — how concurrent requests are isolated, such that observable behavior is equivalent to some serial order of transitions.
+5. **Durability and recovery** — persistence boundaries such that each transition is all-or-nothing; a partial write (promise settled, resumes lost) violates wake conservation.
+6. **Transport and encoding** — HTTP/gRPC binding, URL scheme, field naming, serialization, authentication. The spec constrains only the abstract request/response types and statuses.
+7. **Message delivery** — how outbox messages reach their addresses: push or poll, routing, retries. Delivery may be at-least-once and lossy; the task retry and lease τ-steps are the safety net.
+8. **Clock** — units and source of `now` (the `retryTimeout := 5000` default reads as milliseconds).
+9. **Cron and templates** — `nextCron` and `expand` are `opaque`: the cron dialect and promise-id template syntax are yours (or your ecosystem's).
+10. **Configuration** — which knobs to expose beyond `retryTimeout`.
+
+The search handlers (P-06, T-11, S-04) are not yet specified; the conformant behavior is `501`.
 
 ## Build
 
