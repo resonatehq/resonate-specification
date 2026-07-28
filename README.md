@@ -120,16 +120,17 @@ The only obligation on your τ-schedule is **weak fairness**: every continuously
 
 **You decide** — everything the spec deliberately leaves open:
 
-1. **τ-schedule** — when timeouts fire and when the drain runs: inline cascade, background workers, DB triggers, periodic sweep. Only weak fairness is required.
-2. **Projection materialization** — when (or whether) timed-out promises are physically settled; the projected record is byte-identical to what the timeout τ-step writes, so any schedule is conformant.
-3. **Storage** — how the six state components map onto your platform's storage, realizing the effects' contract (lookup by id, keyed collapse-on-set).
-4. **Atomicity and concurrency** — how concurrent requests are isolated, such that observable behavior is equivalent to some serial order of transitions.
-5. **Durability and recovery** — persistence boundaries such that each transition is all-or-nothing; a partial write (promise settled, resumes lost) violates wake conservation.
-6. **Transport and encoding** — HTTP/gRPC binding, URL scheme, field naming, serialization, authentication. The spec constrains only the abstract request/response types and statuses.
-7. **Message delivery** — how outbox messages reach their addresses: push or poll, routing, retries. Delivery may be at-least-once and lossy; the task retry and lease τ-steps are the safety net.
-8. **Clock** — units and source of `now` (the `retryTimeout := 5000` default reads as milliseconds).
-9. **Cron and templates** — `nextCron` and `expand` are `opaque`: the cron dialect and promise-id template syntax are yours (or your ecosystem's).
-10. **Configuration** — which knobs to expose beyond `retryTimeout`.
+1. **Storage** — understand the storage semantics of the target platform and decide how to represent each durable component of the state — durable promises, durable tasks, durable schedules, durable deferred resumes, durable promise timeouts, durable task timeouts, durable schedule timeouts, and durable execute and unblock messages.
+2. **Consistency** — understand the consistency semantics of the target platform and decide how to implement each handler to meet safety and liveness guarantees.
+3. **Materialization** — decide when logically determined facts are materialized: a pending promise past its deadline is observed as settled either way, so the timeout τ-steps may fire eagerly, lazily, or in batches — the projection makes the schedule unobservable.
+4. **Settlement** — decide whether deferred resumes are discharged synchronously, within the settling handler, or asynchronously, by the environment later — the guarantee holds at every stage of the lag.
+5. **Transport and encoding** — HTTP/gRPC binding, URL scheme, field naming, serialization, authentication. The spec constrains only the abstract request/response types and statuses.
+6. **Message delivery** — how outbox messages reach their addresses: push or poll, routing, retries. Delivery may be at-least-once and lossy; the task retry and lease τ-steps are the safety net.
+7. **Clock** — units and source of `now` (the `retryTimeout := 5000` default reads as milliseconds).
+8. **Cron and templates** — `nextCron` and `expand` are `opaque`: the cron dialect and promise-id template syntax are yours (or your ecosystem's).
+9. **Configuration** — which knobs to expose beyond `retryTimeout`.
+
+One obligation spans materialization and settlement: **weak fairness** — every continuously enabled τ-step eventually fires.
 
 The search handlers (P-06, T-11, S-04) are not yet specified; the conformant behavior is `501`.
 
