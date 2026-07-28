@@ -104,7 +104,7 @@ Exactly five exist ([`02-timeouts.lean`](spec/02-actions/02-timeouts.lean), [`03
 | `onTaskRetryTimeout` | a pending task's retry is due | Re-arm the retry and re-enqueue the task's `execute`. |
 | `onTaskLeaseTimeout` | an acquired task's lease is due | Return the task to pending, re-arm the retry, re-enqueue its `execute`. |
 | `onScheduleTimeout` | a schedule's fire is due | Create the occurrence promise(s), catching up on missed occurrences, and re-arm the next fire. |
-| `onResume` (via `drain`) | the deferred set is non-empty | Wake a suspended awaiter (re-pending + `execute`) or record the trigger on an active one; the deadline guard re-checks at drain time (timeout always wins). |
+| `onResume` | a deferred resume is present | Wake a suspended awaiter (re-pending + `execute`) or record the trigger on an active one; the deadline guard re-checks at drain time (timeout always wins). |
 
 The only obligation on your τ-schedule is **weak fairness**: every continuously enabled τ-step eventually fires. Eager (inline within the triggering handler, the `step` combinator) and lazy (background workers, arbitrarily later) schedules are both admitted; the durable-execution guarantee ([`04-guarantee.lean`](spec/02-actions/04-guarantee.lean)) is stated over the τ-quotient precisely so that it holds at every stage of τ-lag.
 
