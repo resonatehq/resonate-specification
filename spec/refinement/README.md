@@ -105,6 +105,10 @@ On an existing targeted promise, base `taskCreate` reads promise and task raw: i
 
 This divergence is not fundamental; it marks a defect in the base spec, found by trying to refine it. Fix the base's exists-path to project and guard, and the row becomes exact.
 
+## D3 — unguarded τ handlers ([`03-obstruction.lean`](03-obstruction.lean))
+
+A timer entry means "not before" in both machines — but only the coalesced machine enforces it. The base machine's τ handlers never check their own due times: fired off-schedule, `onPromiseTimeout` settles a *live* promise, postdating `settledAt` to a future instant, where the coalesced R1 — guarded by the deadline itself — refuses. So around timers the refinement gap runs in the *opposite* direction from what "abstraction" suggests: the base transition relation is the more permissive one, admitting scheduler misbehavior the coalesced machine makes unrepresentable. Not fundamental: base ⊑ coalesced holds over environments that fire τ only when due (the intended reading of an armed timer), or unconditionally after adding defensive due-time guards to the base handlers.
+
 ## Build
 
 ```

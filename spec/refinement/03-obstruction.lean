@@ -135,4 +135,35 @@ example : d2B.1.task.map (·.state) = some .acquired := by decide
 example : d2C.1.promise.map (·.state) = some .rejectedTimedout := by decide
 example : d2C.1.task.map (·.state) = some .fulfilled := by decide
 
+/-! ### D3 — unguarded τ handlers: the base machine trusts its scheduler
+
+A timer entry means "not before" in BOTH machines — but only the
+coalesced machine enforces it. The base machine's τ handlers never
+check their own due times; the "fire when due, not before" discipline
+is an unstated contract on the environment. Fired off-schedule,
+`onPromiseTimeout` SETTLES A LIVE PROMISE — stamping a `settledAt` that
+lies in the future — where the coalesced R1, guarded by the deadline
+itself, refuses.
+
+So around timers the refinement gap runs in the OPPOSITE direction from
+what "abstraction" suggests: the base transition relation is the more
+permissive one, admitting scheduler misbehavior the coalesced machine
+makes unrepresentable. Like D2 this is not fundamental: base ⊑
+coalesced holds over environments that fire τ only when due (the
+intended reading of an armed timer), or unconditionally after adding
+defensive due-time guards to the base handlers.  -/
+
+-- Deadline 300, fired at 100.
+def d3B := runB (Timeouts.onPromiseTimeout "h" 100) d1Base
+def d3C := runC (AbstractModel.Rules.promiseTimeout "h" 100) (alpha d1Base)
+
+-- The base machine settles a promise with 200 time units to live —
+-- and postdates the settlement to a future instant.
+example : (d3B.2.promises.find? (·.id == "h")).map (fun p => (p.state, p.settledAt))
+    = some (.rejectedTimedout, some 300) := by decide
+
+-- The coalesced machine's guard is the deadline itself: no-op.
+example : (d3C.2.promises.find? (·.id == "h")).map (·.state)
+    = some .pending := by decide
+
 end Refinement
