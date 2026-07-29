@@ -32,11 +32,13 @@ What `alpha` folds away:
 * `promiseTimeouts`, `scheduleTimeouts` — pure mirrors of `timeoutAt` /
   `nextRunAt`; dropped.
 * `taskTimeouts` kind 1 (lease) — becomes the task's `expiresAt`.
-* `taskTimeouts` kind 0 (retry/delay) — dropped: the dispatch rule R6 is
-  always enabled for a dispatchable task, so retry instants need no
-  representation. (This is sound for simulation because a base retry
-  firing is state-equal to an R6 firing — the outbox upsert is keyed.)
-* `config` — the retry cadence has no meaning without retry timers.
+* `taskTimeouts` kind 0 (retry/delay) — becomes the task's `retryAt`:
+  the instant the next dispatch is due. The cadence itself (the base
+  machine's `now + retryTimeout` re-arm) is NOT state on the abstract
+  side — R6 takes the re-arm instant as a parameter, and the base
+  machine's policy is recovered by instantiating it.
+* `config` — the retry cadence constant lives in that instantiation,
+  not in the abstract state.
 
 Because base handlers append callbacks in order while `alpha` folds the
 LIFO deferred list back in, list ORDER in `callbacks`/`listeners` (and
@@ -94,7 +96,9 @@ def absTask (timeouts : List ServerModel.TaskTimeout)
   { id := t.id, state := t.state, version := t.version, ttl := t.ttl,
     pid := t.pid, resumes := t.resumes,
     expiresAt :=
-      (timeouts.find? (fun e => e.id == t.id && e.kind == 1)).map (·.timeout) }
+      (timeouts.find? (fun e => e.id == t.id && e.kind == 1)).map (·.timeout),
+    retryAt :=
+      (timeouts.find? (fun e => e.id == t.id && e.kind == 0)).map (·.timeout) }
 
 /-- Fold one deferred resume back onto its awaited promise. -/
 def addDeferred (ps : List AbstractModel.PromiseObject)

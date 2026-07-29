@@ -16,8 +16,9 @@ so a stale or spurious firing is harmless.
   R4 `resume`            if there is a settled promise with awaiters:
                          drain a batch (1 to all), waking each.
   R5 `leaseExpiry`       if there is a task past its lease deadline.
-  R6 `dispatch`          if there is a dispatchable pending task, emit
-                         its `execute`.
+  R6 `dispatch`          if there is a pending task past `retryAt`, emit
+                         its `execute` and re-arm `retryAt` at a chosen
+                         instant.
   R7 `scheduleFire`      if there is a schedule past `nextRunAt`.
 
 R1 and R2 are the facts themselves — firing one is the environment
@@ -30,8 +31,10 @@ revocation: the slow worker's fencing token stays valid until someone
 re-acquires, and expiry must not be forced by observation. Dispatch may
 emit an `execute` for a task whose promise has meanwhile timed out; the
 message is doomed (its acquire will 409) but the base machine emits it
-too. Repeated firing of R6 is at-least-once delivery — the base
-machine's retry timer without the timer.  -/
+too. R6's due time is state (`retryAt`) while its re-arm instant is a
+parameter: the machine records WHEN the next attempt is owed, the
+scheduler decides the cadence — repeated firing is at-least-once
+delivery.  -/
 
 namespace AbstractModel
 namespace Rules
@@ -71,7 +74,8 @@ def resumeOne (awaited awaiter : String) (now : Nat) : M Unit := do
   | some (t, some _) =>
       match t.state with
       | .suspended =>
-          setTask { t with state := .pending, resumes := [awaited] }
+          setTask { t with state := .pending, resumes := [awaited],
+                           retryAt := some now }
       | .pending | .acquired | .halted =>
           if !(t.resumes.contains awaited) then
             setTask { t with resumes := t.resumes ++ [awaited] }
@@ -103,27 +107,28 @@ def leaseExpiry (id : String) (now : Nat) : M Unit := do
       | some deadline =>
           if t.state == .acquired ∧ deadline ≤ now then
             setTask { t with state := .pending, pid := none, ttl := none,
-                             expiresAt := none }
+                             expiresAt := none, retryAt := some now }
 
-/-- R6: emit the `execute` for a pending task whose `resonate:delay`
-    (if any) has passed. Raw read; repeatable — the outbox's keyed
-    upsert makes re-emission idempotent. -/
-def dispatch (id : String) (now : Nat) : M Unit := do
+/-- R6: emit the `execute` for a pending task whose dispatch is due
+    (`retryAt ≤ now`), and re-arm `retryAt` at `next` — the rule's
+    parameter, because cadence is the scheduler's choice, not the
+    machine's state. Raw read; repeatable — the outbox's keyed upsert
+    makes re-emission idempotent, so any `next` (including one already
+    past) is sound. -/
+def dispatch (id : String) (next : Nat) (now : Nat) : M Unit := do
   match ← getTask id with
   | none => pure ()
   | some t =>
-      if t.state != .pending then
-        return ()
-      match ← getPromise t.id with
+      match t.retryAt with
       | none => pure ()
-      | some p =>
-          let due :=
-            match p.tags.get? "resonate:delay" with
-            | some d => decide (d.toNat! ≤ now)
-            | none => true
-          if due then
-            setMessage ((p.tags.get? "resonate:target").getD "")
-              (.execute t.id t.version)
+      | some due =>
+          if t.state == .pending ∧ due ≤ now then
+            match ← getPromise t.id with
+            | none => pure ()
+            | some p =>
+                setTask { t with retryAt := some next }
+                setMessage ((p.tags.get? "resonate:target").getD "")
+                  (.execute t.id t.version)
 
 /-- Create every occurrence due at or before `now`, advancing the
     schedule past them. -/

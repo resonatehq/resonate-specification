@@ -106,10 +106,17 @@ def PromiseObject.materialize (p : PromiseObject) (now : Nat) : PromiseObject :=
   else
     p
 
-/-- The base machine's task object plus `expiresAt`: the absolute lease
-    deadline, which the base machine keeps in its `taskTimeouts`
-    component (kind 1). With the deadline on the object, lease expiry
-    needs no auxiliary state — its rule guards on the task alone. -/
+/-- The base machine's task object plus its two deadlines, which the
+    base machine keeps in its `taskTimeouts` component: `expiresAt`, the
+    absolute lease deadline (kind 1), and `retryAt`, the instant the
+    next dispatch of the task's `execute` is due (kind 0 — seeded by the
+    `resonate:delay` tag at creation, reset to `now` by every transition
+    that re-pends the task, re-armed by the dispatch rule itself). With
+    the deadlines on the object, lease expiry and dispatch need no
+    auxiliary state — their rules guard on the task alone.
+
+    Both are guard data for CHOICES (R5, R6), never facts: neither is
+    materialized on touch. -/
 structure TaskObject where
   id        : String
   state     : TaskState
@@ -117,6 +124,7 @@ structure TaskObject where
   ttl       : Option Nat    := none
   pid       : Option String := none
   expiresAt : Option Nat    := none
+  retryAt   : Option Nat    := none
   resumes   : List String   := []
   deriving Repr
 
@@ -128,7 +136,7 @@ def TaskObject.toRecord (t : TaskObject) : TaskRecord :=
     the base machine's settle and timeout transitions write. -/
 def TaskObject.fulfill (t : TaskObject) : TaskObject :=
   { t with state := .fulfilled, pid := none, ttl := none,
-           expiresAt := none, resumes := [] }
+           expiresAt := none, retryAt := none, resumes := [] }
 
 /-- Four components. No config (no retry cadence — dispatch is a rule the
     environment fires at will), no timeout sets, no deferred queue. -/

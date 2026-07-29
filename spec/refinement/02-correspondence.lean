@@ -76,7 +76,7 @@ def s1C := runC (do
     let res ← AbstractModel.promiseSettle s1SettleReq 500
     AbstractModel.Rules.notify "a" 1 500      -- batch: the one listener
     AbstractModel.Rules.resume "a" 1 500      -- batch: the one awaiter
-    AbstractModel.Rules.dispatch "t1" 500     -- the woken task's execute
+    AbstractModel.Rules.dispatch "t1" 5500 500     -- the woken task's execute
     return res)
   (alpha s1Base)
 
@@ -106,7 +106,7 @@ def s2C := runC (do
     AbstractModel.Rules.taskFulfillment "a" 500
     AbstractModel.Rules.notify "a" 9 500      -- batch: all
     AbstractModel.Rules.resume "a" 9 500      -- batch: all
-    AbstractModel.Rules.dispatch "t1" 500)
+    AbstractModel.Rules.dispatch "t1" 5500 500)
   (alpha s2Base)
 
 example : stateEq (alpha s2B.2) s2C.2 := by decide
@@ -155,7 +155,7 @@ def s4B := runB (Timeouts.onTaskLeaseTimeout "c" 500) s4Base
 
 def s4C := runC (do
     AbstractModel.Rules.leaseExpiry "c" 500
-    AbstractModel.Rules.dispatch "c" 500)
+    AbstractModel.Rules.dispatch "c" 5500 500)
   (alpha s4Base)
 
 example : stateEq (alpha s4B.2) s4C.2 := by decide
@@ -203,12 +203,12 @@ example : s7B.1 == s7C.1 := by native_decide
 example : stateEq (alpha s7B.2) s7C.2 := by native_decide
 
 -- Before the delay, R6 refuses (guard: the delay tag) …
-example : stateEq (runC (AbstractModel.Rules.dispatch "d" 100) s7C.2).2 s7C.2 := by
+example : stateEq (runC (AbstractModel.Rules.dispatch "d" 5800 100) s7C.2).2 s7C.2 := by
   native_decide
 
 -- … at the delay, base retry-τ and R6 emit the same execute.
 def s7B' := runB (Timeouts.onTaskRetryTimeout "d" 800) s7B.2
-def s7C' := runC (AbstractModel.Rules.dispatch "d" 800) s7C.2
+def s7C' := runC (AbstractModel.Rules.dispatch "d" 5800 800) s7C.2
 
 example : stateEq (alpha s7B'.2) s7C'.2 := by native_decide
 

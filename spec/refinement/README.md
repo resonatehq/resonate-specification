@@ -14,9 +14,9 @@
 |---|---|
 | `deferred` entry `(awaited, awaiter)` | folded back into `promises[awaited].callbacks` — stage 1 of the base wake pipeline becomes indistinguishable from stage 0; the coalesced machine has one stage, *still on the promise* |
 | `taskTimeouts` kind 1 (lease) | the task's `expiresAt` |
-| `taskTimeouts` kind 0 (retry/delay) | dropped — R6 is always enabled for a dispatchable task, and a base retry firing is state-equal to an R6 firing (keyed outbox upsert) |
+| `taskTimeouts` kind 0 (retry/delay) | the task's `retryAt` — the due instant is state; the cadence (`now + retryTimeout` re-arm) is R6's parameter |
 | `promiseTimeouts`, `scheduleTimeouts` | dropped — pure mirrors of `timeoutAt` / `nextRunAt` |
-| `config` | dropped — retry cadence has no meaning without retry timers |
+| `config` | dropped from state — the retry constant lives in the instantiation of R6's re-arm parameter |
 | everything else | verbatim |
 
 List order in `callbacks`/`listeners` is not preserved (base handlers append; `alpha` folds the LIFO deferred back in) and not observable (no response exposes it; batch drains commute), so state comparison is up to order: `stateEq`.
@@ -69,14 +69,14 @@ A full proof would quantify each row over base states satisfying the base machin
 | `scheduleTimeouts` entry | fire R7 at `nextRunAt` |
 | `deferred` entry | fire R4, batch of one, due immediately |
 
-Under the pair `(alpha, sigma)` nothing is dropped but `config`, and the mapping is checked at two levels:
+Under the pair `(alpha, sigma)` the mapping is checked at two levels:
 
 - **Discharge bookkeeping** — every base τ-step discharges a due commitment (its state effect: the abstract rule sequences of the table above) and re-commits per a fixed policy: a wake, a retry, a lease expiry each re-commit a `dispatch` at `now + retryTimeout`; a promise timeout swaps itself for one `resume` commitment per callback. Executed for the settle, timeout, lease, and retry pipelines.
-- **Derivability** — three of the four timed commitment classes, and the resumes, are *functions of the abstract image*: promise timeouts from external ∧ pending, lease expiries from acquired ∧ `expiresAt`, resumes from the callbacks `alpha` retains on settled promises, schedule fires from `nextRunAt`. The base machine stores them separately only because its rules cannot guard on object state the way the abstract rules do.
+- **Derivability** — every commitment class is a *function of the abstract image*: promise timeouts from external ∧ pending, lease expiries from acquired ∧ `expiresAt`, dispatches from pending ∧ `retryAt`, resumes from the callbacks `alpha` retains on settled promises, schedule fires from `nextRunAt`. `sigma` adds nothing to `alpha`: the mapping is **lossless** — the base machine's entire auxiliary state is redundant given the abstract state. The base machine stores it separately only because its rules cannot guard on object state the way the abstract rules do.
 
-What remains underivable is exactly the `dispatch` dues — **retry pacing**. The machine-checked witness: firing the retry τ twice at different instants yields alpha-equal states with different `sigma`. So, modulo the policy constant, the base machine adds precisely one kind of information to the abstract machine: *when the scheduler fires next* — information the protocol never observes.
+What remains base-only is not state but **policy** — the `now + retryTimeout` re-commitment constant, recovered by instantiating R6's `next` parameter. (One asymmetry, machine-checked: the base τ handlers are unguarded — an adversarial environment may fire them off-schedule — while R6 is self-guarded by `retryAt`; an off-schedule base retry is observationally a keyed-upsert stutter plus a moved due time, matched by the next on-schedule R6.)
 
-This collapses the "behind" half of the simulation relation (pending drains are read off `sigma`, no longer existential); the "ahead" half — facts forced by touches, and with it D1 below — is untouched.
+This collapses the "behind" half of the simulation relation (pending drains are read off the state, no longer existential); the "ahead" half — facts forced by touches, and with it D1 below — is untouched.
 
 ## D1 — why full refinement is impossible ([`03-obstruction.lean`](03-obstruction.lean))
 

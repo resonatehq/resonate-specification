@@ -15,7 +15,7 @@ A second, more abstract specification of the Resonate protocol. Same wire types,
 | Component | Content |
 |---|---|
 | promises | `callbacks` and `listeners` survive settlement, pending drain |
-| tasks | carry `expiresAt`, the absolute lease deadline |
+| tasks | carry `expiresAt` (absolute lease deadline) and `retryAt` (next dispatch due) |
 | schedules | `nextRunAt` is the alarm |
 | outbox | keyed upsert, as in the base machine |
 
@@ -31,6 +31,8 @@ The machine's dynamics rest on one distinction:
 
 - A **choice** is scheduling: waking awaiters, notifying listeners, expiring a lease, dispatching an execute, firing a schedule. Choices are never forced by observation — they are the internal rules, fired by the environment in any order, at any pace. An expired lease in particular is *permission to redispatch, not revocation*: the slow worker's fencing token stays valid until someone re-acquires, which is why lease expiry must not happen on touch.
 
+A deadline can be *data for a choice* without making the choice a fact: `expiresAt` and `retryAt` guard R5 and R6 — they say when a firing becomes *legal*, not that anything has happened — and are therefore never materialized on touch.
+
 Retention is what makes materialization-on-touch sound: flipping a promise's state on a read commits no notification atomically, because the obligations remain recorded on the object and the batch rules discharge them later.
 
 ## Handlers
@@ -39,7 +41,7 @@ Retention is what makes materialization-on-touch sound: flipping a promise's sta
 
 Handlers write objects and return responses — they emit no messages and record no auxiliary state. Consequences of the discipline:
 
-- `promiseCreate` of a targeted promise creates the task and stops; the dispatch rule emits the `execute`, and the `resonate:delay` tag is that rule's guard, so the base machine's create-side delay machinery disappears.
+- `promiseCreate` of a targeted promise creates the task and stops; the dispatch rule emits the `execute`. The `resonate:delay` tag is consumed at creation — it seeds the task's `retryAt` — so the base machine's create-side delay machinery collapses to one field initialization.
 - `promiseSettle` and `taskFulfill` write **the promise only**. Fact T fulfills the task on the next touch (or via R2); the batch rules notify and resume.
 - Compound liveness guards collapse: the base machine's `p.state != .pending ∨ p.timeoutAt ≤ now` is post-touch just `p.state != .pending`, and TIMEOUT ALWAYS WINS is automatic — touching a task whose promise is past its deadline fulfills the task before any guard looks at it.
 
@@ -54,7 +56,7 @@ Handlers write objects and return responses — they emit no messages and record
 | R3 `notify` | a settled promise with listeners → drain a batch (1..all), emitting `unblock`s |
 | R4 `resume` | a settled promise with awaiters → drain a batch (1..all), waking each through the touch |
 | R5 `leaseExpiry` | an acquired task past `expiresAt` → back to pending |
-| R6 `dispatch` | a pending task past its delay → emit its `execute` (repeatable; keyed upsert makes it idempotent — at-least-once delivery without a retry timer) |
+| R6 `dispatch` | a pending task past `retryAt` → emit its `execute`, re-arm `retryAt` at a chosen instant (the rule's parameter — the due time is state, the cadence is the scheduler's; repeated firing is at-least-once delivery, idempotent via the keyed upsert) |
 | R7 `scheduleFire` | a schedule past `nextRunAt` → create the due occurrences, advance |
 
 R1 and R2 are the facts themselves — firing one is the environment touching an object — and exist as rules so facts materialize eventually even on objects no request ever touches again.

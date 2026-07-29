@@ -83,7 +83,8 @@ def taskCreate (req : TaskCreateReq) (now : Nat) : M TaskCreateRes := do
           else if t.state == .pending then
             let t := { t with state := .acquired, version := t.version + 1,
                               ttl := some req.ttl, pid := some req.pid,
-                              expiresAt := some (now + req.ttl), resumes := [] }
+                              expiresAt := some (now + req.ttl),
+                              retryAt := none, resumes := [] }
             setTask t
             return { status := 200, task := some t.toRecord, promise := some p.toRecord }
           else
@@ -104,7 +105,8 @@ def taskAcquire (req : TaskAcquireReq) (now : Nat) : M TaskAcquireRes := do
         return { status := 409 }
       let t := { t with state := .acquired, version := t.version + 1,
                         ttl := some req.ttl, pid := some req.pid,
-                        expiresAt := some (now + req.ttl), resumes := [] }
+                        expiresAt := some (now + req.ttl),
+                        retryAt := none, resumes := [] }
       setTask t
       return { status := 200, task := some t.toRecord, promise := some p.toRecord }
 
@@ -188,7 +190,7 @@ def taskSuspend (req : TaskSuspendReq) (now : Nat) : M TaskSuspendRes := do
           | none =>
               pure ()
         setTask { t with state := .suspended, pid := none, ttl := none,
-                         expiresAt := none, resumes := [] }
+                         expiresAt := none, retryAt := none, resumes := [] }
         return { status := 200 }
 
 /-- Settles the promise; the task's fulfillment is fact T, materialized
@@ -229,7 +231,7 @@ def taskRelease (req : TaskReleaseReq) (now : Nat) : M TaskReleaseRes := do
       if t.version != req.version then
         return { status := 409 }
       setTask { t with state := .pending, pid := none, ttl := none,
-                       expiresAt := none }
+                       expiresAt := none, retryAt := some now }
       return { status := 200 }
 
 /-- Reads the task ALONE — no touch, raw material state — mirroring the
@@ -246,7 +248,7 @@ def taskHalt (req : TaskHaltReq) (_now : Nat) : M TaskHaltRes := do
       if t.state == .halted then
         return { status := 200 }
       setTask { t with state := .halted, pid := none, ttl := none,
-                       expiresAt := none }
+                       expiresAt := none, retryAt := none }
       return { status := 200 }
 
 def taskContinue (req : TaskContinueReq) (now : Nat) : M TaskContinueRes := do
@@ -262,7 +264,7 @@ def taskContinue (req : TaskContinueReq) (now : Nat) : M TaskContinueRes := do
       | some p =>
           if p.state != .pending then
             return { status := 409 }
-          setTask { t with state := .pending }
+          setTask { t with state := .pending, retryAt := some now }
           return { status := 200 }
 
 def taskSearch (_req : TaskSearchReq) (_now : Nat) : M TaskSearchRes := do

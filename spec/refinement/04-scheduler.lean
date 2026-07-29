@@ -29,21 +29,20 @@ abstract spec with full fidelity:
       onTaskLeaseTimeout    leaseExpiry id      dispatch id (now+retry)
       onScheduleTimeout     scheduleFire id     scheduleFire id next
 
-  * every commitment class except `dispatch` is DERIVABLE from `alpha`'s
-    image: promise timeouts from external ∧ pending, lease expiries from
-    acquired ∧ `expiresAt`, resumes from the callbacks `alpha` retains
-    on settled promises (schedule fires mirror `nextRunAt` likewise);
+  * every commitment class is DERIVABLE from `alpha`'s image: promise
+    timeouts from external ∧ pending, lease expiries from acquired ∧
+    `expiresAt`, dispatches from pending ∧ `retryAt`, resumes from the
+    callbacks `alpha` retains on settled promises (schedule fires
+    mirror `nextRunAt` likewise).
 
-  * `dispatch` dues are the one thing `alpha` genuinely forgets: retry
-    PACING. Two concrete states below are alpha-equal yet
-    sigma-different — they differ only in WHEN the scheduler fires next.
-
-So, modulo `config` (the constant of the re-commitment policy), the
-concrete machine adds exactly one kind of information to the abstract
-machine: *when*. Which is what a scheduler is. This collapses the
-"behind" half of the simulation relation — the pending drains are no
-longer existential, they are read off `sigma` — while the "ahead" half
-(facts forced by touches, and with it obstruction D1) remains.
+So `sigma` adds nothing to `alpha`: the mapping is LOSSLESS, and the
+concrete machine's auxiliary state is redundant given the abstract
+state. What remains concrete-only is not state but policy — the
+`now + retryTimeout` re-commitment constant, recovered by instantiating
+R6's `next` parameter. This collapses the "behind" half of the
+simulation relation — the pending drains are no longer existential,
+they are read off the state — while the "ahead" half (facts forced by
+touches, and with it obstruction D1) remains.
 
 One granularity note: the concrete drain walks its deferred queue in
 LIFO order while the abstract `resume` rule drains a callback prefix.
@@ -113,7 +112,7 @@ example : eqSet (sigma w2.2)
 example : stateEq (alpha w2.2)
     (runC (do
         AbstractModel.Rules.resume "a" 1 500
-        AbstractModel.Rules.dispatch "t1" 500)
+        AbstractModel.Rules.dispatch "t1" 5500 500)
       (alpha w1.2)).2 := by decide
 
 -- A promise-timeout discharge swaps itself for the resume commitments
@@ -168,17 +167,53 @@ example : eqSet (derivedResumes (alpha w1.2))
 example : eqSet (derivedResumes (alpha w3.2))
     ((sigma w3.2).filter (·.isResume)) := by decide
 
-/-! ### … and the one thing it cannot: WHEN
+/-! ### … and with `retryAt` on the task, the dispatch dues too
 
-Fire the retry τ once more, later. The abstract images are EQUAL — the
-re-emission is a keyed-upsert stutter — but the schedulers differ: the
-next dispatch moved. Retry pacing is the sole irreducible content of the
-concrete machine's auxiliary state, and it is meaningless to the
-protocol: only the scheduler cares.  -/
+The abstract task now carries its dispatch due time, so the last
+commitment class is also a function of the abstract image — `sigma` is
+DERIVABLE FROM `alpha` in full, and the mapping is lossless: the
+concrete machine's auxiliary state is redundant given the abstract
+state. (What remains concrete-only is not state but POLICY — the
+`now + retryTimeout` re-arm, recovered by instantiating R6's `next`
+parameter, as every dispatch above does.)  -/
 
-def w4 := runB (Timeouts.onTaskRetryTimeout "d" 900) s7B'.2
+def Pending.isDispatch : Pending → Bool
+  | .dispatch .. => true | _ => false
 
-example : stateEq (alpha s7B'.2) (alpha w4.2) := by native_decide
-example : eqSet (sigma s7B'.2) (sigma w4.2) = false := by native_decide
+def derivedDispatches (t : AbstractModel.ServerState) : List Pending :=
+  t.tasks.filterMap fun tk =>
+    match tk.retryAt with
+    | some due => if tk.state == .pending then some (.dispatch tk.id due) else none
+    | none => none
+
+example : eqSet (derivedDispatches (alpha w2.2))
+    ((sigma w2.2).filter (·.isDispatch)) := by decide
+example : eqSet (derivedDispatches (alpha s7B.2))
+    ((sigma s7B.2).filter (·.isDispatch)) := by native_decide
+example : eqSet (derivedDispatches (alpha s7B'.2))
+    ((sigma s7B'.2).filter (·.isDispatch)) := by native_decide
+
+-- Pacing is now visible to `alpha`: firing the retry τ again (on
+-- schedule, at its due instant) moves `retryAt`, and the abstract
+-- images DIFFER (before `retryAt`, this pair was the alpha-equal,
+-- sigma-different witness) — matched, as everywhere, by R6 with the
+-- base policy instantiated.
+--
+-- One asymmetry surfaces here: the base τ handler is UNGUARDED — its
+-- due instant lives only in the timer it discharges, so an adversarial
+-- environment may fire it early — while R6 is self-guarded by
+-- `retryAt`. An off-schedule base firing is observationally a
+-- keyed-upsert stutter (same entry, same version) plus a moved due
+-- time, and its alpha-image is reached by the next on-schedule R6;
+-- putting the due time into the state is exactly what makes the
+-- abstract machine refuse to fire a commitment before it exists.
+def w4 := runB (Timeouts.onTaskRetryTimeout "d" 5800) s7B'.2
+
+example : stateEq (alpha s7B'.2) (alpha w4.2) = false := by native_decide
+example : eqSet (sigma w4.2)
+    [.promiseTimeout "d" 2000, .dispatch "d" 10800] := by native_decide
+example : stateEq (alpha w4.2)
+    (runC (AbstractModel.Rules.dispatch "d" 10800 5800) (alpha s7B'.2)).2 := by
+  native_decide
 
 end Refinement

@@ -8,9 +8,10 @@ listener, waking an awaiter — all of that is the rules' job
 (`05-rules.lean`). In particular:
 
 * `promiseCreate` of a targeted promise creates the task and stops —
-  the dispatch rule emits the `execute`, and the `resonate:delay` tag is
-  its guard, so the create-side delay machinery of the base spec
-  disappears.
+  the dispatch rule emits the `execute`. The `resonate:delay` tag is
+  consumed at creation: it seeds the task's `retryAt`, so the
+  create-side delay machinery of the base spec collapses to one field
+  initialization.
 * `promiseSettle` writes THE PROMISE ONLY. The task is fulfilled by
   fact T (on the next touch, or by `Rules.taskFulfillment`); awaiters
   and listeners stay on the promise for the batch rules.  -/
@@ -47,7 +48,14 @@ def promiseCreate (req : PromiseCreateReq) (now : Nat) : M PromiseCreateRes := d
             createdAt := now }
         setPromise p
         if p.tags.has "resonate:target" then
-          setTask { id := p.id, state := .pending, version := 0 }
+          -- The delay tag seeds `retryAt`: the first dispatch is due at
+          -- the delay if it is still ahead, immediately otherwise.
+          let due :=
+            match p.tags.get? "resonate:delay" with
+            | some d => max d.toNat! now
+            | none => now
+          setTask { id := p.id, state := .pending, version := 0,
+                    retryAt := some due }
         return { status := 200, promise := some p.toRecord }
       else
         -- Born past its deadline: fact P holds at birth, so the promise
