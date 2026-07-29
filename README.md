@@ -1,6 +1,11 @@
 # Resonate Specification
 
-The Resonate protocol, specified as an executable **abstract machine** in Lean 4: a state, a set of effects (atomic operations on the state) and a set of request handlers (transitions composed from effects). 
+The Resonate protocol, specified as an executable **abstract machine** in Lean 4: a state, a set of effects (atomic operations on the state) and a set of request handlers (transitions composed from effects).
+
+Two machines share the protocol surface:
+
+- **The base machine** (this document; [`spec/01-objects`](spec/01-objects), [`spec/02-actions`](spec/02-actions)) — explicit timeout components, a deferred-resume queue, and projection.
+- **The coalesced machine** ([`spec/abstract`](spec/abstract/README.md)) — no timeout components, no deferred queue, no projection: deadlines live on the objects, awaiters and listeners stay on the settled promise and drain in batches (1 to all at a time), and every touch materializes. Whether the base machine refines it — and the one machine-checked point where it cannot — is worked out in [`spec/refinement`](spec/refinement/README.md).
 
 ## The Machine
 
