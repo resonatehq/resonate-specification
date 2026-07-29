@@ -65,7 +65,8 @@ def bT1 : ServerModel.TaskObject :=
 
 def s1Base : ServerModel.ServerState :=
   { promises := [bA, bT1P], tasks := [bT1],
-    promiseTimeouts := [{ id := "a", timeout := 1000 }] }
+    promiseTimeouts := [{ id := "a", timeout := 1000 },
+                        { id := "t1", timeout := 2000 }] }
 
 def s1SettleReq : PromiseSettleReq := { id := "a", state := .resolved, value := {} }
 
@@ -94,7 +95,8 @@ def bTA : ServerModel.TaskObject :=
 
 def s2Base : ServerModel.ServerState :=
   { promises := [bA2, bT1P], tasks := [bTA, bT1],
-    promiseTimeouts := [{ id := "a", timeout := 300 }],
+    promiseTimeouts := [{ id := "a", timeout := 300 },
+                        { id := "t1", timeout := 2000 }],
     taskTimeouts := [{ id := "a", kind := 1, timeout := 250 }] }
 
 def s2B := runB (step (Timeouts.onPromiseTimeout "a" 500) 500) s2Base

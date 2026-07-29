@@ -57,6 +57,27 @@ Every base step maps to a coalesced sequence. The table below is the full map; r
 
 A full proof would quantify each row over base states satisfying the base machine's reachability invariants — chiefly: a deferred entry's awaited promise is settled; a settled promise's stored `callbacks`/`listeners` are empty (settlement moved them), so `alpha`'s fold is the only source of retained obligations; a kind-1 timer exists exactly for acquired tasks. The scenarios execute each row's characteristic case, per this repo's executable-spec discipline.
 
+## Higher fidelity: concrete = abstract + scheduler ([`04-scheduler.lean`](04-scheduler.lean))
+
+`alpha` drops the base machine's auxiliary state and lets the simulation relation absorb the slack existentially. The tighter reading: that state was never protocol state — it is the reification of a **scheduler** for the abstract machine's rules. A second extraction `sigma` reads every armed timer and every deferred entry as a *commitment* to fire a specific abstract rule:
+
+| Base auxiliary state | Commitment |
+|---|---|
+| `promiseTimeouts` entry | fire R1 (and the eager R2/R3/R4 cascade) at `timeoutAt` |
+| `taskTimeouts` kind 1 | fire R5 at the lease deadline |
+| `taskTimeouts` kind 0 | fire R6 at the retry/delay instant |
+| `scheduleTimeouts` entry | fire R7 at `nextRunAt` |
+| `deferred` entry | fire R4, batch of one, due immediately |
+
+Under the pair `(alpha, sigma)` nothing is dropped but `config`, and the mapping is checked at two levels:
+
+- **Discharge bookkeeping** — every base τ-step discharges a due commitment (its state effect: the abstract rule sequences of the table above) and re-commits per a fixed policy: a wake, a retry, a lease expiry each re-commit a `dispatch` at `now + retryTimeout`; a promise timeout swaps itself for one `resume` commitment per callback. Executed for the settle, timeout, lease, and retry pipelines.
+- **Derivability** — three of the four timed commitment classes, and the resumes, are *functions of the abstract image*: promise timeouts from external ∧ pending, lease expiries from acquired ∧ `expiresAt`, resumes from the callbacks `alpha` retains on settled promises, schedule fires from `nextRunAt`. The base machine stores them separately only because its rules cannot guard on object state the way the abstract rules do.
+
+What remains underivable is exactly the `dispatch` dues — **retry pacing**. The machine-checked witness: firing the retry τ twice at different instants yields alpha-equal states with different `sigma`. So, modulo the policy constant, the base machine adds precisely one kind of information to the abstract machine: *when the scheduler fires next* — information the protocol never observes.
+
+This collapses the "behind" half of the simulation relation (pending drains are read off `sigma`, no longer existential); the "ahead" half — facts forced by touches, and with it D1 below — is untouched.
+
 ## D1 — why full refinement is impossible ([`03-obstruction.lean`](03-obstruction.lean))
 
 The base machine can **observe a logical fact without committing it**: `taskGet` on a task whose own promise is past its deadline serves the projected `.fulfilled` view and writes nothing. The stored task is still `.suspended`. `taskHalt` — which reads the task alone, deliberately: halt is an operation on the material coordination layer — then halts it: `200`.
