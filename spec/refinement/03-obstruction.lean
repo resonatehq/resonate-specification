@@ -4,6 +4,7 @@ import «02-actions».«T-01-task.get»
 import «02-actions».«T-02-task.create»
 import «02-actions».«T-09-task.halt»
 import «abstract».«03-tasks»
+import «abstract».«05-rules»
 
 /-!  # Refinement — why base ⊑ coalesced does NOT hold, exactly
 
