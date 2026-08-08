@@ -143,8 +143,12 @@ out to contain almost every ingredient:
    fencing (`AtMostOneValidClaim`) — one worker drives one computation.
 5. **Latent promises + external settles.** A promise can exist with no
    computation and be settled out of band — a durable, awaitable mailbox cell.
-6. **Delayed dispatch and schedules.** `resonate:delay` defers a task's
-   dispatch to a timestamp; schedules give cron. Alarms come for free.
+6. **Armed timers, delayed dispatch, schedules.** A `resonate:timer` promise
+   carries an *armed* deadline the server is obliged to discharge by
+   resolving it (C1, `ObligationsAreDischargeable`) — the spec-native alarm
+   clock. Schedules give cron. The reference server model additionally
+   interprets `resonate:delay` (deferred task dispatch) — useful but, note,
+   implementation latitude rather than specified obligation; see §7.4.
 7. **Timeout always wins.** Every object encoded in promises inherits the
    spec's timeout discipline — a wedged entity cannot outlive its deadlines.
 
@@ -510,7 +514,51 @@ specified in §5.3. Formal-spec impact assessment:
   state/journal consistency problem Restate solves with co-location, without
   buying expressiveness.
 
-### 7.4 Recommendation
+### 7.4 Alarm mechanics, and the corrected claim
+
+An alarm (delayed self-message) is inherently two-phase: mailbox order is
+creation order, so a delayed message must enter the mailbox at FIRE time —
+an armed alarm holding a head slot would block every later message (all four
+reference systems agree: Restate delayed sends, DO alarms, and Temporal
+timers all join the serialization order when they fire). The design question
+is only which artifact holds the obligation between arm and fire. Three
+encodings, in decreasing formal standing:
+
+1. **Timer promise + durable awaiter — fully specified.** Arm = create a
+   `resonate:timer` promise with `timeoutAt = T` plus a detached workflow
+   durably awaiting it that appends the message on resume. Every part is the
+   specified machine: the armed deadline is a server obligation
+   (`ObligationsAreDischargeable`), the wakeup is the callback/resume drain.
+   Cost: one suspended task per armed alarm (a visible pending record, no
+   worker memory).
+2. **`resonate:delay` deferred dispatch — reference-model latitude.** The
+   alarm promise's own task dispatch is deferred to T; no waiter record at
+   all. This is what the prototype's `sendLater` uses — but the tag is NOT
+   in the formal spec, so the earlier "alarms need no extension" claim holds
+   only on servers that implement it. Elevating `resonate:delay` to a
+   specified, obligation-backed feature (its dispatch deadline discharged
+   like a timer's) is a small extension that belongs beside
+   `resonate:serial`.
+3. **Schedules — specified, for the recurring case** (a fresh targeted
+   promise per tick whose function appends to the mailbox).
+
+**Cancellation needs no mechanism:** an alarm is a promise, so cancel =
+settle it. Every dangerous residue is already closed by the conformance
+rules: dispatch and lease expiry gate on the projection (C4/C5,
+`NoDeadDispatch`), and the resume drain skips a logically dead awaiter (C6).
+Timeout-always-wins doubles as alarm-cancellation semantics.
+
+**Known anomaly — arming survives handler rollback.** `sendLater` is a
+durable child of the message; if the handler subsequently throws, state
+rolls back but the alarm stays armed (the general effects-vs-state rollback
+asymmetry, sharpened). Fixes: (a) guard at fire — the alarm handler checks
+current state and no-ops (the standard DO/at-least-once discipline; works
+today); (b) arm-at-commit — generalize `task.fulfill` to carry additional
+creates (`fulfill { settle, creates: [...] }`) so arming joins the message's
+atomic commit; a rolled-back message then arms nothing. (b) is proposed as
+a third candidate extension.
+
+### 7.5 Recommendation
 
 1. **Ship variant A** as the SDK's object runtime now — zero protocol risk,
    full semantics, and its storage shape is forward-compatible with C (a
