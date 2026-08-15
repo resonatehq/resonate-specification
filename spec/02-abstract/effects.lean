@@ -27,26 +27,78 @@ def applyAll (s : ServerState) : List Effect → ServerState
   | []      => s
   | e :: es => applyAll (e.apply s) es
 
+/-! ## Branches
+
+A second output channel, beside the effects. A `Branch` records WHICH
+WAY a handler went at a decision point — not what it did to the state,
+which is what an `Effect` is for.
+
+The two are separate channels rather than one, and the separation is
+the point:
+
+  * The effect list is the CONTRACT. "Handlers touch state only through
+    effects; together they are what a concrete implementation must
+    realize." A branch is not something an implementation realizes, and
+    putting one in that list would make the contract say it is.
+  * Every claim about the effect list stays literally true. Settlement's
+    write set is `{p.id}` — still, with no `filter (· != note)` threaded
+    through the statement of it.
+  * Inertness is STRUCTURAL. `applyAll` consumes `List Effect` and
+    cannot see a branch, so no theorem is needed to say branches do not
+    move the state. `run` returns exactly what it returned before.
+
+The channel exists to be read by tooling, not by the machine: no
+handler branches on a branch, and `run` discards them. What it buys is
+that a coverage question — which decision did this handler make, and
+did anything ever make the other one — is answered BY the machine
+rather than reconstructed from its inputs and outputs by something that
+can get the reconstruction wrong.
+
+Recorded as a structure of three strings rather than an inductive per
+handler: the catalogue below is then plain data, so the set of branches
+that exist can be diffed against the set a corpus reached, and the
+difference reported by name. An inductive would be finer and would need
+a new constructor per decision point; three strings can be enumerated. -/
+structure Branch where
+  /-- The handler, by its catalogue number: `P-02`, `T-06`, `τ-resume`. -/
+  handler : String
+  /-- The decision point within it. -/
+  point   : String
+  /-- Which way it went. -/
+  taken   : String
+  deriving Repr, DecidableEq
+
 structure Env where
   state : ServerState
   mat   : Bool
 
-def H (α : Type) : Type := Env → α × List Effect
+def H (α : Type) : Type := Env → α × List Effect × List Branch
 
 instance : Monad H where
-  pure a   := fun _ => (a, [])
+  pure a   := fun _ => (a, [], [])
   bind x f := fun e =>
-    let (a, w₁) := x e
-    let (b, w₂) := f a e
-    (b, w₁ ++ w₂)
+    let (a, w₁, b₁) := x e
+    let (b, w₂, b₂) := f a e
+    (b, w₁ ++ w₂, b₁ ++ b₂)
 
-def ask : H Env := fun e => (e, [])
+def ask : H Env := fun e => (e, [], [])
 
-def emit (f : Effect) : H Unit := fun _ => ((), [f])
+def emit (f : Effect) : H Unit := fun _ => ((), [f], [])
+
+/-- Record a branch. Inert: it emits no effect, so `run` is unchanged. -/
+def note (handler point taken : String) : H Unit :=
+  fun _ => ((), [], [{ handler, point, taken }])
 
 def run (mat : Bool) (act : H α) (s : ServerState) : α × ServerState :=
-  let (a, w) := act { state := s, mat := mat }
+  let (a, w, _) := act { state := s, mat := mat }
   (a, applyAll s w)
+
+/-- `run`, keeping the branch log. The coverage tooling's entry point;
+    nothing in the specification calls it. -/
+def runBranches (mat : Bool) (act : H α) (s : ServerState) :
+    α × ServerState × List Branch :=
+  let (a, w, b) := act { state := s, mat := mat }
+  (a, applyAll s w, b)
 
 def getPromise (id : String) : H (Option PromiseObject) :=
   return (← ask).state.promises.find? (·.id == id)
@@ -192,9 +244,18 @@ def promiseRegisterCallback (req : PromiseRegisterCallbackReq) (now : Nat) :
         return { status := 422 }
       if pAwaited.state == .pending then
         if pAwaiter.state == .pending then
+          -- One of the two doors an awaits-edge can come through. The
+          -- other is `task.suspend`, and the difference survives into the
+          -- drain: this one leaves the awaiter RUNNING, so the drain
+          -- buffers rather than wakes. Nothing in the state at drain time
+          -- records which door was used.
+          note "P-04" "callback" "registered"
           setPromise (pAwaited.addCallback req.awaiter)
+        else
+          note "P-04" "callback" "awaiter-not-live"
         return { status := 200, promise := some pAwaited.toRecord }
       else
+        note "P-04" "callback" "awaited-settled"
         return { status := 200, promise := some pAwaited.toRecord }
 
 def promiseRegisterListener (req : PromiseRegisterListenerReq) (now : Nat) :
@@ -364,8 +425,12 @@ def registerAwaited (awaiter : String) (now : Nat) :
   | [] => pure ()
   | action :: rest => do
       match ← readPromise action.awaited now with
-      | some pa => setPromise (pa.addCallback awaiter)
-      | none => pure ()
+      | some pa =>
+          -- The other door. This one PARKS the task, so the drain finds
+          -- it `.suspended` and wakes it.
+          note "T-06" "callback" "registered"
+          setPromise (pa.addCallback awaiter)
+      | none => note "T-06" "callback" "awaited-absent"
       registerAwaited awaiter now rest
 
 def taskSuspend (req : TaskSuspendReq) (now : Nat) : H TaskSuspendRes := do
@@ -532,20 +597,38 @@ def processListener (id : String) (address : String) (now : Nat) : H Unit := do
         setPromise { p with listeners := p.listeners.filter (· != address) }
         setMessage address (.unblock p.toRecord)
 
+/-- The drain's verdict, and the six outcomes `ResumeOutcome` names.
+
+    `expired` and `fulfilled` both arrive here as a `.fulfilled` task —
+    `touchTask` materializes the awaiter's own deadline first, so an
+    awaiter that timed out reads exactly like one a client settled. The
+    promise is in hand, so the machine can say which; anything
+    reconstructing this verdict from the task alone cannot, and will
+    report whichever branch it happens to test for first. -/
 def resumeOne (awaited awaiter : String) (now : Nat) : H Unit := do
   match ← touchTask awaiter now with
-  | none => pure ()
-  | some (_, none) => pure ()
-  | some (t, some _) =>
+  | none => note "τ-resume" "outcome" "absent"
+  | some (_, none) => note "τ-resume" "outcome" "absent"
+  | some (t, some p) =>
       match t.state with
       | .suspended =>
+          note "τ-resume" "outcome" "resumed"
           setTask { t with state := .pending, resumes := [awaited],
                            retryAt := some now }
       | .pending | .acquired | .halted =>
           if !(t.resumes.contains awaited) then
+            note "τ-resume" "outcome" "buffered"
             setTask { t with resumes := t.resumes ++ [awaited] }
+          else
+            note "τ-resume" "outcome" "duplicate"
       | .fulfilled =>
-          pure ()
+          -- TIMEOUT ALWAYS WINS orders these: past its own deadline is
+          -- `expired`, and only a settlement that beat the deadline is
+          -- `fulfilled`.
+          if p.timeoutAt ≤ now then
+            note "τ-resume" "outcome" "expired"
+          else
+            note "τ-resume" "outcome" "fulfilled"
 
 def processCallback (id : String) (awaiter : String) (now : Nat) : H Unit := do
   match ← touchPromise id now with

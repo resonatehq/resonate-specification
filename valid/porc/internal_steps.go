@@ -43,10 +43,12 @@ func (s *ServerState) ProcessListener(id, address string, now uint64) {
 func (s *ServerState) resumeOne(awaited, awaiter string, now uint64) {
 	t, p := s.readTask(Materialized, awaiter, now)
 	if t == nil || p == nil {
+		s.note("τ-resume", "outcome", "absent")
 		return
 	}
 	switch t.State {
 	case TaskSuspended:
+		s.note("τ-resume", "outcome", "resumed")
 		u := t.clone()
 		u.State = TaskPending
 		u.Resumes = []string{awaited}
@@ -54,11 +56,24 @@ func (s *ServerState) resumeOne(awaited, awaiter string, now uint64) {
 		s.SetTask(u)
 	case TaskPending, TaskAcquired, TaskHalted:
 		if !contains(t.Resumes, awaited) {
+			s.note("τ-resume", "outcome", "buffered")
 			u := t.clone()
 			u.Resumes = append(u.Resumes, awaited)
 			s.SetTask(u)
+		} else {
+			s.note("τ-resume", "outcome", "duplicate")
 		}
 	case TaskFulfilled:
+		// TIMEOUT ALWAYS WINS orders these. `readTask` has already
+		// materialized the awaiter's own deadline, so a timed-out awaiter
+		// reads exactly like a settled one; the promise is in hand, so the
+		// machine can tell them apart. A classifier working from the task
+		// alone cannot, and reports whichever it tests for first.
+		if p.TimeoutAt <= now {
+			s.note("τ-resume", "outcome", "expired")
+		} else {
+			s.note("τ-resume", "outcome", "fulfilled")
+		}
 	}
 }
 

@@ -364,37 +364,34 @@ func tauBucket(name, arg, arg2, via string, now uint64, before, after *ServerSta
 	// one bucket, which would let a corpus claim to cover the drain while
 	// testing only half of it.
 	if name == "R4" {
-		return kind + "/" + resumeOutcome(arg2, now, before, after) + "/" + via
+		return kind + "/" + outcomeNote(after) + "/" + via
 	}
 	return kind + "/fired"
 }
 
-// resumeOutcome names the drain's verdict, following `ResumeOutcome`.
+// The drain's verdict is no longer reconstructed here. `resumeOne` notes its
+// own outcome and `outcomeNote` reads it back. What stood in this place was
+// twenty lines re-deriving that verdict from the before/after states, and it
+// was wrong twice: it folded `expired` into `fulfilled` (a single
+// `State != Pending` test, reporting whichever branch it reached first), and
+// it could not see which door registered the awaits-edge at all.
 //
-// The deadline test comes FIRST and is not folded into "settled". An
-// awaiter that timed out is `expired` and one that was settled by a client
-// is `fulfilled`; both are non-pending, so a single `State != Pending` test
-// reports whichever branch it happens to reach and silently loses the
-// other. TIMEOUT ALWAYS WINS is the rule that orders them.
-func resumeOutcome(awaiter string, now uint64, before, after *ServerState) string {
-	pre, post := before.GetTask(awaiter), after.GetTask(awaiter)
-	p := before.GetPromise(awaiter)
-	if pre == nil || p == nil {
-		return "absent"
+// Neither was a corpus bug. Both were reconstruction bugs, and the
+// reconstruction is what the branch channel removes.
+
+// outcomeNote reads the verdict the drain recorded for itself.
+func outcomeNote(after *ServerState) string {
+	for i := len(after.Branches) - 1; i >= 0; i-- {
+		if b := after.Branches[i]; b.Handler == "τ-resume" && b.Point == "outcome" {
+			return b.Taken
+		}
 	}
-	if p.TimeoutAt <= now {
-		return "expired"
-	}
-	if p.State != Pending || pre.State == TaskFulfilled {
-		return "fulfilled"
-	}
-	if post != nil && pre.State == TaskSuspended && post.State == TaskPending {
-		return "resumed"
-	}
-	if post != nil && len(post.Resumes) > len(pre.Resumes) {
-		return "buffered"
-	}
-	return "duplicate"
+	// The τ changed the state without the drain running at all: it
+	// materialized the awaited's deadline and found no callback to drain.
+	// A distinct behaviour, and one the old classifier hid inside a
+	// fictional `absent` — it reported an outcome for a function that had
+	// not been called.
+	return "not-reached"
 }
 
 // ------------------------------------------------------- the script DSL

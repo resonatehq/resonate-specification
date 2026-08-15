@@ -245,6 +245,28 @@ type ServerState struct {
 	Promises []*Promise
 	Tasks    []*Task
 	Outbox   []Message
+	// Branches is the second output channel, mirroring
+	// `spec/02-abstract/effects.lean`'s `List Effect × List Branch`: which
+	// way a handler went at a decision point, as opposed to what it did to
+	// the state.
+	//
+	// Deliberately absent from `Key()` and from `clone()`. It is not part
+	// of state identity — two states that differ only in how they were
+	// reached are the same state, and putting branches in the key would
+	// split them and break dedup. The exclusion is what makes the channel
+	// inert, exactly as `applyAll` never seeing a branch does in the Lean.
+	Branches []Branch
+}
+
+// Branch records one decision a handler made.
+type Branch struct {
+	Handler string
+	Point   string
+	Taken   string
+}
+
+func (s *ServerState) note(handler, point, taken string) {
+	s.Branches = append(s.Branches, Branch{handler, point, taken})
 }
 
 func (s *ServerState) clone() *ServerState {

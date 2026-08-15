@@ -136,7 +136,12 @@ func (s *ServerState) PromiseRegisterCallback(d Discipline, awaited, awaiter str
 		return Response{Status: 422}
 	}
 	if pa.State == Pending && pw.State == Pending {
+		// One of two doors an awaits-edge can come through. This one leaves
+		// the awaiter RUNNING, so the drain buffers rather than wakes.
+		s.note("P-04", "callback", "registered")
 		s.SetPromise(pa.AddCallback(awaiter))
+	} else {
+		s.note("P-04", "callback", "not-registered")
 	}
 	return Response{Status: 200, Promise: pa}
 }
@@ -219,6 +224,9 @@ func (s *ServerState) TaskSuspend(d Discipline, id string, version uint64, await
 	// Pass 2: park the awaiter on every awaited promise.
 	for _, a := range awaited {
 		if pa := s.readPromise(d, a, now); pa != nil {
+			// The other door. This one PARKS the task, so the drain finds it
+			// suspended and wakes it.
+			s.note("T-06", "callback", "registered")
 			s.SetPromise(pa.AddCallback(id))
 		}
 	}
