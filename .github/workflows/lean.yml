@@ -1,0 +1,62 @@
+# The specification itself, type-checked.
+#
+# `binaries.yml` builds the Go tools and runs their tests; nothing built
+# the Lean until now, so a change to `spec/` was only as checked as
+# whoever last ran `lake build` locally.
+#
+# Two steps, because they answer different questions and fail for
+# different reasons:
+#
+#   spec      does the specification elaborate? Seconds to a minute. This
+#             is the one that catches a type error.
+#   theorems  do the proofs still go through? Minutes — it runs the
+#             exhaustive `decide` sweeps, every script up to length 4 over
+#             the 9-request alphabet. This is the one that catches a
+#             change that type-checks and breaks a proof.
+
+name: lean
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install elan
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o elan-init.sh
+          sh elan-init.sh -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Toolchain
+        run: lean --version && lake --version
+
+      # Lake's build products key off the toolchain and the source, so the
+      # cache is safe to reuse across runs of the same toolchain and saves
+      # the sweeps' several minutes on every push that does not touch them.
+      - name: Cache .lake
+        uses: actions/cache@v4
+        with:
+          path: .lake
+          key: lake-${{ runner.os }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('spec/**/*.lean', 'valid/**/*.lean', 'lakefile.lean') }}
+          restore-keys: |
+            lake-${{ runner.os }}-${{ hashFiles('lean-toolchain') }}-
+
+      - name: lake build spec
+        run: lake build spec
+
+      - name: lake build theorems
+        run: lake build theorems
+
+      - name: lake build valid
+        run: lake build valid
