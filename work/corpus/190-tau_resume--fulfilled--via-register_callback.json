@@ -1,0 +1,17 @@
+{
+  "name": "tau_resume--fulfilled--via-register_callback",
+  "witness": "tau.resume/fulfilled/via:register_callback",
+  "covers": [
+    "promise.create/200/absent/born-live/external",
+    "promise.register_callback/200/awaited:live/awaiter:live/awaited-shape:external/awaiter-shape:targeted",
+    "promise.settle/200/live/to:resolved",
+    "task.create/200/promise:absent/born-live",
+    "task.fulfill/200/task:acquired.lease-live/promise:live/version-current/to:resolved",
+    "tau.resume/fulfilled/via:register_callback"
+  ],
+  "from": "template: a callback drained onto an already-settled awaiter",
+  "steps": 5,
+  "taus": 1,
+  "expectedOutbox": [],
+  "tier": "both"
+}

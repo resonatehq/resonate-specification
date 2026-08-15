@@ -2,13 +2,12 @@
   "name": "task_get--200--task-fulfilled--promise-resolved",
   "witness": "task.get/200/task:fulfilled/promise:resolved",
   "covers": [
-    "promise.create/200/absent/born-live/targeted",
-    "task.acquire/200/task:pending/promise:live/version-current",
-    "task.fulfill/200/task:acquired.lease-live/promise:live/version-current/to:resolved",
+    "promise.settle/200/live/to:resolved",
+    "task.create/200/promise:absent/born-live",
     "task.get/200/task:fulfilled/promise:resolved"
   ],
-  "from": "template: task create, acquire, fulfil",
-  "steps": 4,
+  "from": "template: a suspended task whose own promise is settled under it",
+  "steps": 3,
   "taus": 0,
   "expectedOutbox": [],
   "tier": "both"

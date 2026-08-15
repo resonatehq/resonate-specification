@@ -297,6 +297,28 @@ func bucket(o Op, pre *ServerState, res Response) string {
 	return strings.Join(parts, "/")
 }
 
+// noteRoute records how an awaits-edge came to exist.
+func noteRoute(route map[string]string, o Op, res Response) {
+	if res.Status != 200 {
+		return
+	}
+	switch o.Kind {
+	case "promise.register_callback":
+		route[o.ID+"|"+o.Awaiter] = "via:register_callback"
+	case "task.suspend":
+		for _, a := range o.Awaited {
+			route[a+"|"+o.ID] = "via:suspend"
+		}
+	}
+}
+
+func routeOf(route map[string]string, awaited, awaiter string) string {
+	if v, ok := route[awaited+"|"+awaiter]; ok {
+		return v
+	}
+	return "via:none"
+}
+
 func settable(s PromiseState) bool {
 	return s == Resolved || s == Rejected || s == RejectedCanceled
 }
@@ -327,7 +349,7 @@ func hasDup(xs []string) bool {
 // obligation already discharged is a silent no-op — the specification says
 // so, and an observational trace cannot tell the two apart. Driven traces
 // can, so the no-op is a coverage obligation of its own.
-func tauBucket(name, arg, arg2 string, now uint64, before, after *ServerState) string {
+func tauBucket(name, arg, arg2, via string, now uint64, before, after *ServerState) string {
 	kind := map[string]string{
 		"R1": "tau.promise_timeout", "R3": "tau.listener", "R4": "tau.resume",
 		"R5": "tau.task_lease", "R6": "tau.task_retry",
@@ -342,26 +364,28 @@ func tauBucket(name, arg, arg2 string, now uint64, before, after *ServerState) s
 	// one bucket, which would let a corpus claim to cover the drain while
 	// testing only half of it.
 	if name == "R4" {
-		return kind + "/" + resumeOutcome(arg2, now, before, after)
+		return kind + "/" + resumeOutcome(arg2, now, before, after) + "/" + via
 	}
 	return kind + "/fired"
 }
 
+// resumeOutcome names the drain's verdict, following `ResumeOutcome`.
+//
+// The deadline test comes FIRST and is not folded into "settled". An
+// awaiter that timed out is `expired` and one that was settled by a client
+// is `fulfilled`; both are non-pending, so a single `State != Pending` test
+// reports whichever branch it happens to reach and silently loses the
+// other. TIMEOUT ALWAYS WINS is the rule that orders them.
 func resumeOutcome(awaiter string, now uint64, before, after *ServerState) string {
 	pre, post := before.GetTask(awaiter), after.GetTask(awaiter)
-	if pre == nil {
-		return "absent"
-	}
 	p := before.GetPromise(awaiter)
-	if p == nil {
+	if pre == nil || p == nil {
 		return "absent"
 	}
-	if p.State != Pending || p.TimeoutAt <= now {
-		// The awaiter is past its own deadline, or already settled: the
-		// timeout path owns its cleanup and the resume is dead weight.
+	if p.TimeoutAt <= now {
 		return "expired"
 	}
-	if pre.State == TaskFulfilled {
+	if p.State != Pending || pre.State == TaskFulfilled {
 		return "fulfilled"
 	}
 	if post != nil && pre.State == TaskSuspended && post.State == TaskPending {
@@ -370,7 +394,7 @@ func resumeOutcome(awaiter string, now uint64, before, after *ServerState) strin
 	if post != nil && len(post.Resumes) > len(pre.Resumes) {
 		return "buffered"
 	}
-	return "other"
+	return "duplicate"
 }
 
 // ------------------------------------------------------- the script DSL
@@ -635,6 +659,79 @@ func scenarios() []scenario {
 				tick(10).op(tget(x)).                // pending, resumes recorded
 				tick(10).op(tacquire(x, 1, "p1", 800)).steps
 		}},
+		{"a callback registered by promise.register_callback, drained", func() []step {
+			// The other door to the drain. `task.suspend` parks the task, so
+			// the drain finds it `.suspended` and wakes it; P-04 leaves the
+			// awaiter running, so the drain finds it live and merely records
+			// the trigger. Same τ, different outcome — and nothing in the
+			// state at drain time says which door was used, which is why the
+			// corpus reached the drain 4 ways and all 4 through suspend.
+			return newScript(1000).
+				op(pcreate(a, 9000, tagsExternal())).
+				tick(10).op(tcreate(x, "p0", 800, 9000, tagsTargeted())).
+				tick(10).op(pcallback(a, x)).
+				tick(10).op(psettle(a, Resolved)).
+				tick(10).tau("R4", a, x). // buffered: the awaiter is live, not suspended
+				tick(10).op(tget(x)).
+				tick(10).tau("R4", a, x). // duplicate: the trigger is already recorded
+				tick(10).op(tget(x)).steps
+		}},
+		{"a woken task buffers its second awaited", func() []step {
+			// Both edges registered by suspend, but the second drains onto a
+			// task that the FIRST drain already woke — so it buffers rather
+			// than resumes. The route is the same; the awaiter's state is
+			// not.
+			return newScript(1000).
+				op(pcreate(a, 9000, tagsExternal())).
+				tick(10).op(pcreate(oid("b"), 9000, tagsExternal())).
+				tick(10).op(tcreate(x, "p0", 800, 9000, tagsTargeted())).
+				tick(10).op(tsuspend(x, 1, a, oid("b"))).
+				tick(10).op(psettle(a, Resolved)).
+				tick(10).op(psettle(oid("b"), Resolved)).
+				tick(10).tau("R4", a, x).        // resumed
+				tick(10).tau("R4", oid("b"), x). // buffered: no longer suspended
+				tick(10).op(tget(x)).steps
+		}},
+		{"a suspended task whose own promise is settled under it", func() []step {
+			return newScript(1000).
+				op(pcreate(a, 9000, tagsExternal())).
+				tick(10).op(tcreate(x, "p0", 800, 9000, tagsTargeted())).
+				tick(10).op(tsuspend(x, 1, a)).
+				tick(10).op(psettle(x, Resolved)).
+				tick(10).op(psettle(a, Resolved)).
+				tick(10).tau("R4", a, x). // fulfilled, not expired: no deadline passed
+				tick(10).op(tget(x)).steps
+		}},
+		{"a callback drained onto an already-settled awaiter", func() []step {
+			return newScript(1000).
+				op(pcreate(a, 9000, tagsExternal())).
+				tick(10).op(tcreate(x, "p0", 800, 9000, tagsTargeted())).
+				tick(10).op(pcallback(a, x)).
+				tick(10).op(psettle(a, Resolved)).
+				tick(10).op(tfulfill(x, 1, Resolved)).
+				tick(10).tau("R4", a, x). // fulfilled: the awaiter is done
+				tick(10).op(tget(x)).steps
+		}},
+		{"a suspended task whose awaited was registered by P-04", func() []step {
+			return newScript(1000).
+				op(pcreate(a, 9000, tagsExternal())).
+				tick(10).op(pcreate(oid("b"), 9000, tagsExternal())).
+				tick(10).op(tcreate(x, "p0", 800, 9000, tagsTargeted())).
+				tick(10).op(pcallback(a, x)).
+				tick(10).op(tsuspend(x, 1, oid("b"))).
+				tick(10).op(psettle(a, Resolved)).
+				tick(10).tau("R4", a, x). // resumed, but registered via P-04
+				tick(10).op(tget(x)).steps
+		}},
+		{"a P-04 callback drained onto an awaiter past its own deadline", func() []step {
+			return newScript(1000).
+				op(pcreate(a, 9000, tagsExternal())).
+				tick(10).op(tcreate(x, "p0", 800, 1500, tagsTargeted())).
+				tick(10).op(pcallback(a, x)).
+				tick(10).op(psettle(a, Resolved)).
+				at(2000).tau("R4", a, x). // expired, registered via P-04
+				tick(10).op(tget(x)).steps
+		}},
 		{"timeout always wins: the awaiter is dead at drain time", func() []step {
 			return newScript(1000).
 				op(pcreate(a, 9000, tagsExternal())).
@@ -791,12 +888,30 @@ type Case struct {
 // "`expired` vs `fulfilled` is the distinction TIMEOUT ALWAYS WINS
 // legislates". A corpus reaching four of six has a gap worth printing.
 var Declared = []string{
-	"tau.resume/resumed",
-	"tau.resume/buffered",
-	"tau.resume/duplicate",
-	"tau.resume/expired",
-	"tau.resume/fulfilled",
-	"tau.resume/absent",
+	"tau.resume/resumed/via:suspend",
+	"tau.resume/resumed/via:register_callback",
+	"tau.resume/buffered/via:suspend",
+	"tau.resume/buffered/via:register_callback",
+	// `duplicate` is declared here and is BELIEVED UNREACHABLE in this
+	// machine, deliberately left in the list so the report keeps saying so.
+	// `ProcessCallback` removes the callback from the awaited before calling
+	// `resumeOne`, so a pair cannot drain twice: the second firing returns
+	// at the `contains(p.Callbacks, awaiter)` guard and is a silent no-op,
+	// never reaching the `contains(t.Resumes, awaited)` branch that would
+	// report `duplicate`. Two different awaited promises append two
+	// different entries, so they do not reach it either.
+	//
+	// Either that branch is defensive-only, or it is reachable in the
+	// CONCRETE machine — whose `deferred` queue is a separate component
+	// rather than a projection of the callback list — and this abstract port
+	// cannot witness it. Worth settling against `internal-steps-p.lean`
+	// before anyone writes a test for it.
+	"tau.resume/duplicate/via:register_callback",
+	"tau.resume/expired/via:suspend",
+	"tau.resume/expired/via:register_callback",
+	"tau.resume/fulfilled/via:suspend",
+	"tau.resume/fulfilled/via:register_callback",
+	"tau.resume/absent/via:none",
 }
 
 // Corpus is the generated suite plus its coverage accounting.
@@ -815,10 +930,18 @@ func bucketsOf(d Discipline, script []step) []string {
 	snaps := States(d, script)
 	var out []string
 	s := &ServerState{}
+	// Which door registered each awaits-edge. A callback reaching the drain
+	// via `promise.register_callback` and one reaching it via `task.suspend`
+	// are different behaviours — the second parks the task, the first leaves
+	// it running — and the pre-state at drain time cannot tell them apart.
+	// Without this, greedy cover is satisfied by whichever route it finds
+	// first and the other is never exercised.
+	route := map[string]string{}
 	for i, st := range script {
 		pre := snaps[i].S
 		if st.op != nil {
 			res := st.op.apply(s, d)
+			noteRoute(route, *st.op, res)
 			out = append(out, bucket(*st.op, pre, res))
 			continue
 		}
@@ -835,7 +958,7 @@ func bucketsOf(d Discipline, script []step) []string {
 		case "R6":
 			s.ProcessRetryTimeout(st.arg, st.now, st.now)
 		}
-		out = append(out, tauBucket(st.internal, st.arg, st.arg2, st.now, before, s))
+		out = append(out, tauBucket(st.internal, st.arg, st.arg2, routeOf(route, st.arg, st.arg2), st.now, before, s))
 	}
 	return out
 }

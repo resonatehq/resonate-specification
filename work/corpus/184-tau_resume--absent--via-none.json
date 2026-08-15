@@ -1,9 +1,9 @@
 {
-  "name": "tau_resume--absent",
-  "witness": "tau.resume/absent",
+  "name": "tau_resume--absent--via-none",
+  "witness": "tau.resume/absent/via:none",
   "covers": [
     "task.create/200/promise:absent/born-live",
-    "tau.resume/absent"
+    "tau.resume/absent/via:none"
   ],
   "from": "search: seed 280",
   "steps": 1,

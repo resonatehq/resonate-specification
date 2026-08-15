@@ -1,14 +1,15 @@
 {
-  "name": "tau_resume--resumed",
-  "witness": "tau.resume/resumed",
+  "name": "tau_resume--expired--via-suspend",
+  "witness": "tau.resume/expired/via:suspend",
   "covers": [
     "promise.create/200/absent/born-live/external",
+    "promise.settle/200/live/to:resolved",
     "task.create/200/promise:absent/born-live",
     "task.suspend/200/task:acquired.lease-live/promise:live/version-current/awaited:live:external",
-    "tau.resume/resumed"
+    "tau.resume/expired/via:suspend"
   ],
-  "from": "template: timeout always wins: the awaited dies by deadline",
-  "steps": 3,
+  "from": "template: timeout always wins: the awaiter is dead at drain time",
+  "steps": 4,
   "taus": 1,
   "expectedOutbox": [],
   "tier": "both"

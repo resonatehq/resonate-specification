@@ -1,0 +1,17 @@
+{
+  "name": "tau_resume--resumed--via-register_callback",
+  "witness": "tau.resume/resumed/via:register_callback",
+  "covers": [
+    "promise.create/200/absent/born-live/external",
+    "promise.register_callback/200/awaited:live/awaiter:live/awaited-shape:external/awaiter-shape:targeted",
+    "promise.settle/200/live/to:resolved",
+    "task.create/200/promise:absent/born-live",
+    "task.suspend/200/task:acquired.lease-live/promise:live/version-current/awaited:live:external",
+    "tau.resume/resumed/via:register_callback"
+  ],
+  "from": "template: a suspended task whose awaited was registered by P-04",
+  "steps": 6,
+  "taus": 1,
+  "expectedOutbox": [],
+  "tier": "both"
+}

@@ -1,0 +1,13 @@
+{
+  "name": "tau_resume--expired--via-none",
+  "witness": "tau.resume/expired/via:none",
+  "covers": [
+    "task.create/200/promise:absent/born-live",
+    "tau.resume/expired/via:none"
+  ],
+  "from": "search: seed 16",
+  "steps": 1,
+  "taus": 1,
+  "expectedOutbox": [],
+  "tier": "both"
+}

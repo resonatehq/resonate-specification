@@ -6,7 +6,7 @@
     "promise.register_callback/200/awaited:live/awaiter:live/awaited-shape:external/awaiter-shape:targeted",
     "task.create/200/promise:absent/born-live"
   ],
-  "from": "template: callbacks",
+  "from": "template: a P-04 callback drained onto an awaiter past its own deadline",
   "steps": 3,
   "taus": 0,
   "expectedOutbox": [],

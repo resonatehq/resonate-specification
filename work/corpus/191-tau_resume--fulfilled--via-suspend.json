@@ -1,15 +1,15 @@
 {
-  "name": "tau_resume--expired",
-  "witness": "tau.resume/expired",
+  "name": "tau_resume--fulfilled--via-suspend",
+  "witness": "tau.resume/fulfilled/via:suspend",
   "covers": [
     "promise.create/200/absent/born-live/external",
     "promise.settle/200/live/to:resolved",
     "task.create/200/promise:absent/born-live",
     "task.suspend/200/task:acquired.lease-live/promise:live/version-current/awaited:live:external",
-    "tau.resume/expired"
+    "tau.resume/fulfilled/via:suspend"
   ],
-  "from": "template: timeout always wins: the awaiter is dead at drain time",
-  "steps": 4,
+  "from": "template: a suspended task whose own promise is settled under it",
+  "steps": 5,
   "taus": 1,
   "expectedOutbox": [],
   "tier": "both"

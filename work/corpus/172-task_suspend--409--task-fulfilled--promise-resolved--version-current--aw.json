@@ -1,13 +1,13 @@
 {
-  "name": "task_suspend--409--task-fulfilled--promise-resolved--version-current--awaited-live-timer",
-  "witness": "task.suspend/409/task:fulfilled/promise:resolved/version-current/awaited:live:timer",
+  "name": "task_suspend--409--task-fulfilled--promise-resolved--version-current--awaited-live-external",
+  "witness": "task.suspend/409/task:fulfilled/promise:resolved/version-current/awaited:live:external",
   "covers": [
-    "promise.create/200/absent/born-live/timer",
     "task.create/200/promise:absent/born-live",
+    "task.fence/200/task:acquired.lease-live/promise:live/version-current/inner:promise.create:200",
     "task.fulfill/200/task:acquired.lease-live/promise:live/version-current/to:resolved",
-    "task.suspend/409/task:fulfilled/promise:resolved/version-current/awaited:live:timer"
+    "task.suspend/409/task:fulfilled/promise:resolved/version-current/awaited:live:external"
   ],
-  "from": "search: seed 37",
+  "from": "search: seed 219",
   "steps": 4,
   "taus": 0,
   "expectedOutbox": [],
