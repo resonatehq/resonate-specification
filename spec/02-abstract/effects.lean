@@ -122,6 +122,9 @@ def setSettled (p : PromiseObject) : H Unit := do
     | some t => if t.state != .fulfilled then setTask t.fulfill
     | none => pure ()
 
+/-- The birth shapes. All four leave through one exit in `promiseCreate`,
+    so nothing downstream of the response can tell them apart; the notes
+    are the only place the distinction is stated. -/
 def createPromise (req : PromiseCreateReq) (now : Nat) : H PromiseObject := do
   if req.timeoutAt > now then
     let p : PromiseObject :=
@@ -129,11 +132,16 @@ def createPromise (req : PromiseCreateReq) (now : Nat) : H PromiseObject := do
         timeoutAt := req.timeoutAt, createdAt := now }
     setPromise p
     if p.tags.has "resonate:target" then
-      let due :=
-        match p.tags.get? "resonate:delay" with
-        | some d => max (ServerModel.parseNat d) now
-        | none => now
-      setTask { id := p.id, state := .pending, version := 0, retryAt := some due }
+      match p.tags.get? "resonate:delay" with
+      | some d =>
+          note "P-02" "birth" "born-live-targeted-delayed"
+          setTask { id := p.id, state := .pending, version := 0,
+                    retryAt := some (max (ServerModel.parseNat d) now) }
+      | none =>
+          note "P-02" "birth" "born-live-targeted"
+          setTask { id := p.id, state := .pending, version := 0, retryAt := some now }
+    else
+      note "P-02" "birth" "born-live-untargeted"
     return p
   else
     let state :=
@@ -143,7 +151,12 @@ def createPromise (req : PromiseCreateReq) (now : Nat) : H PromiseObject := do
         timeoutAt := req.timeoutAt, createdAt := req.timeoutAt,
         settledAt := some req.timeoutAt }
     setPromise p
+    if req.tags.isTimer then
+      note "P-02" "birth" "born-dead-timer-resolved"
+    else
+      note "P-02" "birth" "born-dead-rejected-timedout"
     if p.tags.has "resonate:target" then
+      note "P-02" "birth" "born-dead-targeted-task-fulfilled"
       setTask { id := p.id, state := .fulfilled, version := 0 }
     return p
 
@@ -198,49 +211,63 @@ open ServerModel (PromiseState
 def promiseGet (req : PromiseGetReq) (now : Nat) : H PromiseGetRes := do
   match ← readPromise req.id now with
   | none =>
+      note "P-01" "branch" "absent"
       return { status := 404 }
   | some p =>
+      note "P-01" "branch" "found"
       return { status := 200, promise := some p.toRecord }
 
 def promiseCreate (req : PromiseCreateReq) (now : Nat) : H PromiseCreateRes := do
   if req.tags.timerTargeted then
+    note "P-02" "branch" "timer-targeted"
     return { status := 400, promise := none }
   match ← readPromise req.id now with
   | some p =>
+      note "P-02" "branch" "idempotent-echo"
       return { status := 200, promise := some p.toRecord }
   | none =>
+      note "P-02" "branch" "created"
       let p ← createPromise req now
       return { status := 200, promise := some p.toRecord }
 
 def promiseSettle (req : PromiseSettleReq) (now : Nat) : H PromiseSettleRes := do
   if !req.state.settable then
+    note "P-03" "branch" "unsettable"
     return { status := 400 }
   match ← readPromise req.id now with
   | none =>
+      note "P-03" "branch" "absent"
       return { status := 404 }
   | some p =>
       if p.state == .pending then
+        note "P-03" "branch" "settled"
         let p := { p with state := req.state, value := req.value, settledAt := some now }
         setSettled p
         return { status := 200, promise := some p.toRecord }
       else
+        note "P-03" "branch" "already-settled"
         return { status := 200, promise := some p.toRecord }
 
 def promiseRegisterCallback (req : PromiseRegisterCallbackReq) (now : Nat) :
     H PromiseRegisterCallbackRes := do
   if req.awaited == req.awaiter then
+    note "P-04" "branch" "self"
     return { status := 400 }
   match ← readPromise req.awaited now with
   | none =>
+      note "P-04" "branch" "awaited-absent"
       return { status := 404 }
   | some pAwaited =>
   match ← readPromise req.awaiter now with
   | none =>
+      note "P-04" "branch" "awaiter-absent"
       return { status := 422 }
   | some pAwaiter =>
       if !(pAwaiter.tags.has "resonate:target") then
+        note "P-04" "branch" "awaiter-untargeted"
         return { status := 422 }
       if !pAwaited.external then
+        note "P-04" "branch" "awaited-internal"
         return { status := 422 }
       if pAwaited.state == .pending then
         if pAwaiter.state == .pending then
@@ -261,17 +288,22 @@ def promiseRegisterCallback (req : PromiseRegisterCallbackReq) (now : Nat) :
 def promiseRegisterListener (req : PromiseRegisterListenerReq) (now : Nat) :
     H PromiseRegisterListenerRes := do
   if !ServerModel.addressValid req.address then
+    note "P-05" "branch" "bad-address"
     return { status := 400 }
   match ← readPromise req.awaited now with
   | none =>
+      note "P-05" "branch" "awaited-absent"
       return { status := 404 }
   | some pAwaited =>
       if !pAwaited.external then
+        note "P-05" "branch" "awaited-internal"
         return { status := 422 }
       if pAwaited.state == .pending then
+        note "P-05" "branch" "registered"
         setPromise (pAwaited.addListener req.address)
         return { status := 200, promise := some pAwaited.toRecord }
       else
+        note "P-05" "branch" "awaited-settled"
         return { status := 200, promise := some pAwaited.toRecord }
 
 def promiseSearch (_req : PromiseSearchReq) (_now : Nat) : H PromiseSearchRes := do
@@ -292,15 +324,19 @@ open ServerModel (TaskGetReq TaskGetRes
 def taskGet (req : TaskGetReq) (now : Nat) : H TaskGetRes := do
   match ← readTask req.id now with
   | none =>
+      note "T-01" "branch" "task-absent"
       return { status := 404 }
   | some (_, none) =>
+      note "T-01" "branch" "promise-absent"
       return { status := 404 }
   | some (t, some _) =>
+      note "T-01" "branch" "found"
       return { status := 200, task := some t.toRecord }
 
 def taskCreate (req : TaskCreateReq) (now : Nat) : H TaskCreateRes := do
   let a := req.action
   if !(a.tags.has "resonate:target") ∨ a.tags.timerTargeted then
+    note "T-02" "branch" "malformed-action"
     return { status := 400 }
   match ← readPromise a.id now with
   | none =>
@@ -314,6 +350,7 @@ def taskCreate (req : TaskCreateReq) (now : Nat) : H TaskCreateRes := do
             ttl := some req.ttl, pid := some req.pid,
             expiresAt := some (now + req.ttl) }
         setTask t
+        note "T-02" "branch" "born-live-acquired"
         return { status := 200, task := some t.toRecord, promise := some p.toRecord }
       else
         let st := ServerModel.PromiseState.rejectedTimedout
@@ -324,16 +361,20 @@ def taskCreate (req : TaskCreateReq) (now : Nat) : H TaskCreateRes := do
         setPromise p
         let t : TaskObject := { id := p.id, state := .fulfilled, version := 0 }
         setTask t
+        note "T-02" "branch" "born-dead-fulfilled"
         return { status := 200, task := some t.toRecord, promise := some p.toRecord }
   | some p =>
       if !(p.tags.has "resonate:target") then
+        note "T-02" "branch" "promise-untargeted"
         return { status := 422 }
       match ← readTask p.id now with
       | none | some (_, none) =>
+          note "T-02" "branch" "task-absent"
           return { status := 409 }
       | some (t, some p) =>
 
           if t.state == .fulfilled then
+            note "T-02" "branch" "already-fulfilled"
             return { status := 200, task := some t.toRecord, promise := some p.toRecord }
           else if t.state == .pending then
             let t := { t with state := .acquired, version := t.version + 1,
@@ -341,50 +382,66 @@ def taskCreate (req : TaskCreateReq) (now : Nat) : H TaskCreateRes := do
                               expiresAt := some (now + req.ttl),
                               retryAt := none, resumes := [] }
             setTask t
+            note "T-02" "branch" "reacquired"
             return { status := 200, task := some t.toRecord, promise := some p.toRecord }
           else
+            note "T-02" "branch" "task-not-pending"
             return { status := 409 }
 
 def taskAcquire (req : TaskAcquireReq) (now : Nat) : H TaskAcquireRes := do
   match ← readTask req.id now with
   | none =>
+      note "T-03" "branch" "task-absent"
       return { status := 404 }
   | some (_, none) =>
+      note "T-03" "branch" "promise-absent"
       return { status := 409 }
   | some (t, some p) =>
       if t.state != .pending then
+        note "T-03" "branch" "task-wrong-state"
         return { status := 409 }
       if p.state != .pending then
+        note "T-03" "branch" "promise-not-live"
         return { status := 409 }
       if t.version != req.version then
+        note "T-03" "branch" "version-mismatch"
         return { status := 409 }
       let t := { t with state := .acquired, version := t.version + 1,
                         ttl := some req.ttl, pid := some req.pid,
                         expiresAt := some (now + req.ttl),
                         retryAt := none, resumes := [] }
       setTask t
+      note "T-03" "branch" "acquired"
       return { status := 200, task := some t.toRecord, promise := some p.toRecord }
 
 def taskFence (req : TaskFenceReq) (now : Nat) : H TaskFenceRes := do
   if req.action.targetId == req.id then
+    note "T-04" "branch" "self-target"
     return { status := 400 }
   match ← readTask req.id now with
   | none =>
+      note "T-04" "branch" "task-absent"
       return { status := 404 }
   | some (_, none) =>
+      note "T-04" "branch" "promise-absent"
       return { status := 409 }
   | some (t, some p) =>
       if t.state != .acquired then
+        note "T-04" "branch" "task-wrong-state"
         return { status := 409 }
       if p.state != .pending then
+        note "T-04" "branch" "promise-not-live"
         return { status := 409 }
       if t.version != req.version then
+        note "T-04" "branch" "version-mismatch"
         return { status := 409 }
       match req.action with
       | .create r =>
+          note "T-04" "branch" "fenced-create"
           let res ← promiseCreate r now
           return { status := 200, action := some (.create res) }
       | .settle r =>
+          note "T-04" "branch" "fenced-settle"
           let res ← promiseSettle r now
           return { status := 200, action := some (.settle res) }
 
@@ -393,9 +450,13 @@ def heartbeatOne (pid : String) (ref : ServerModel.TaskRef) (now : Nat) : H Unit
   | some (t, some p) =>
       if t.state == .acquired ∧ t.version == ref.version
           ∧ t.pid == some pid ∧ p.state == .pending then
+        note "T-05" "branch" "lease-extended"
         setTask { t with expiresAt := some (now + t.ttl.getD 0) }
+      else
+        note "T-05" "branch" "refused"
   | _ =>
-      pure ()
+      note "T-05" "branch" "task-absent"
+
 
 def heartbeatAll (pid : String) (now : Nat) : List ServerModel.TaskRef → H Unit
   | [] => pure ()
@@ -435,31 +496,43 @@ def registerAwaited (awaiter : String) (now : Nat) :
 
 def taskSuspend (req : TaskSuspendReq) (now : Nat) : H TaskSuspendRes := do
   if req.actions.isEmpty then
+    note "T-06" "branch" "empty-actions"
     return { status := 400 }
   if req.actions.any (·.awaited == req.id) then
+    note "T-06" "branch" "self-awaited"
     return { status := 400 }
   let awaitedIds := req.actions.map (·.awaited)
   if awaitedIds.eraseDups.length != awaitedIds.length then
+    note "T-06" "branch" "duplicate-awaited"
     return { status := 400 }
   match ← readTask req.id now with
   | none =>
+      note "T-06" "branch" "task-absent"
       return { status := 404 }
   | some (_, none) =>
+      note "T-06" "branch" "promise-absent"
       return { status := 409 }
   | some (t, some tp) =>
       if t.state != .acquired then
+        note "T-06" "branch" "task-wrong-state"
         return { status := 409 }
       if tp.state != .pending then
+        note "T-06" "branch" "promise-not-live"
         return { status := 409 }
       if t.version != req.version then
+        note "T-06" "branch" "version-mismatch"
         return { status := 409 }
       match ← checkAwaited now req.actions with
       | none =>
+          note "T-06" "branch" "awaited-unusable"
           return { status := 422 }
       | some true =>
+          note "T-06" "branch" "awaited-already-settled"
           setTask { t with resumes := [] }
           return { status := 300 }
       | some false =>
+          note "T-06" "branch" "suspended"
+
           registerAwaited req.id now req.actions
           setTask { t with state := .suspended, pid := none, ttl := none,
                            expiresAt := none, retryAt := none, resumes := [] }
@@ -467,62 +540,82 @@ def taskSuspend (req : TaskSuspendReq) (now : Nat) : H TaskSuspendRes := do
 
 def taskFulfill (req : TaskFulfillReq) (now : Nat) : H TaskFulfillRes := do
   if !req.action.state.settable then
+    note "T-07" "branch" "unsettable"
     return { status := 400 }
   match ← readTask req.id now with
   | none =>
+      note "T-07" "branch" "task-absent"
       return { status := 404 }
   | some (_, none) =>
+      note "T-07" "branch" "promise-absent"
       return { status := 409 }
   | some (t, some p) =>
       if t.state != .acquired then
+        note "T-07" "branch" "task-wrong-state"
         return { status := 409 }
       if p.state != .pending then
+        note "T-07" "branch" "promise-not-live"
         return { status := 409 }
       if t.version != req.version then
+        note "T-07" "branch" "version-mismatch"
         return { status := 409 }
       let p := { p with state := req.action.state, value := req.action.value,
                         settledAt := some now }
       setSettled p
+      note "T-07" "branch" "fulfilled"
       return { status := 200, promise := some p.toRecord }
 
 def taskRelease (req : TaskReleaseReq) (now : Nat) : H TaskReleaseRes := do
   match ← readTask req.id now with
   | none =>
+      note "T-08" "branch" "task-absent"
       return { status := 404 }
   | some (_, none) =>
+      note "T-08" "branch" "promise-absent"
       return { status := 409 }
   | some (t, some p) =>
       if t.state != .acquired then
+        note "T-08" "branch" "task-wrong-state"
         return { status := 409 }
       if p.state != .pending then
+        note "T-08" "branch" "promise-not-live"
         return { status := 409 }
       if t.version != req.version then
+        note "T-08" "branch" "version-mismatch"
         return { status := 409 }
       setTask { t with state := .pending, pid := none, ttl := none,
                        expiresAt := none, retryAt := some now }
+      note "T-08" "branch" "released"
       return { status := 200 }
 
 def taskHalt (req : TaskHaltReq) (now : Nat) : H TaskHaltRes := do
   match ← readTask req.id now with
   | none =>
+      note "T-09" "branch" "task-absent"
       return { status := 404 }
   | some (_, none) =>
+      note "T-09" "branch" "promise-absent"
       return { status := 404 }
   | some (t, some _) =>
       if t.state == .fulfilled then
+        note "T-09" "branch" "already-fulfilled"
         return { status := 409 }
       if t.state == .halted then
+        note "T-09" "branch" "already-halted"
         return { status := 200 }
       setTask { t with state := .halted, pid := none, ttl := none,
                        expiresAt := none, retryAt := none }
+      note "T-09" "branch" "halted"
       return { status := 200 }
 
 def taskContinue (req : TaskContinueReq) (now : Nat) : H TaskContinueRes := do
   match ← readTask req.id now with
   | none =>
+      note "T-10" "branch" "task-absent"
       return { status := 404 }
   | some (t, pOpt) =>
       if t.state != .halted then
+        note "T-10" "branch" "not-halted"
         return { status := 409 }
       match pOpt with
       | none =>
@@ -584,18 +677,34 @@ namespace Internal
 
 open ServerModel (nextCron occurrences expand Schedule)
 
+/-- Each internal step notes whether it did anything. A τ fired with its
+    obligation already discharged is a silent no-op, and no observational
+    trace can witness the difference — the note is the only record that
+    the step ran at all. -/
 def processPromiseTimeout (id : String) (now : Nat) : H Unit := do
+  match ← getPromise id with
+  | none => note "τ-promise-timeout" "branch" "absent"
+  | some p =>
+      if p.state == .pending ∧ p.timeoutAt ≤ now then
+        note "τ-promise-timeout" "branch" "materialized"
+      else
+        note "τ-promise-timeout" "branch" "not-due"
+
   let _ ← touchPromise id now
 
 def processListener (id : String) (address : String) (now : Nat) : H Unit := do
   match ← touchPromise id now with
-  | none => pure ()
+  | none => note "τ-listener" "branch" "absent"
   | some p =>
       if p.state == .pending then
-        pure ()
+        note "τ-listener" "branch" "awaited-pending"
       else if p.listeners.contains address then
+        note "τ-listener" "branch" "delivered"
         setPromise { p with listeners := p.listeners.filter (· != address) }
         setMessage address (.unblock p.toRecord)
+      else
+        note "τ-listener" "branch" "no-such-listener"
+
 
 /-- The drain's verdict, and the six outcomes `ResumeOutcome` names.
 
@@ -642,34 +751,46 @@ def processCallback (id : String) (awaiter : String) (now : Nat) : H Unit := do
 
 def processLeaseTimeout (id : String) (now : Nat) : H Unit := do
   match ← getTask id with
-  | none => pure ()
+  | none => note "τ-lease" "branch" "task-absent"
   | some t =>
       match t.expiresAt with
-      | none => pure ()
+      | none => note "τ-lease" "branch" "unarmed"
       | some deadline =>
           if t.state == .acquired ∧ deadline ≤ now then
             match ← viewPromise t.id now with
-            | none => pure ()
+            | none => note "τ-lease" "branch" "promise-absent"
             | some p =>
                 if p.state == .pending then
+                  note "τ-lease" "branch" "expired"
                   setTask { t with state := .pending, pid := none, ttl := none,
                                    expiresAt := none, retryAt := some now }
+                else
+                  note "τ-lease" "branch" "promise-not-live"
+          else
+            note "τ-lease" "branch" "not-due"
+
 
 def processRetryTimeout (id : String) (next : Nat) (now : Nat) : H Unit := do
   match ← getTask id with
-  | none => pure ()
+  | none => note "τ-retry" "branch" "task-absent"
   | some t =>
       match t.retryAt with
-      | none => pure ()
+      | none => note "τ-retry" "branch" "unarmed"
       | some due =>
           if t.state == .pending ∧ due ≤ now then
             match ← viewPromise t.id now with
-            | none => pure ()
+            | none => note "τ-retry" "branch" "promise-absent"
             | some p =>
                 if p.state == .pending then
+                  note "τ-retry" "branch" "dispatched"
                   setTask { t with retryAt := some next }
                   setMessage ((p.tags.get? "resonate:target").getD "")
                     (.execute t.id t.version)
+                else
+                  note "τ-retry" "branch" "promise-not-live"
+          else
+            note "τ-retry" "branch" "not-due"
+
 
 def fireOccurrence (s : Schedule) (t : Nat) : H Unit :=
   createIfAbsent
@@ -695,6 +816,144 @@ def processSchedule (id : String) (now : Nat) : H Unit := do
       | none => pure ()
 
 end Internal
+
+
+/-! ## The catalogue
+
+Every branch the machine can note, as DATA. The point of writing it out
+rather than deriving it from a run: a search reports what it reached,
+and a behaviour it never reached is indistinguishable from one that does
+not exist. Diffing a corpus against this list is what turns "here is
+what we covered" into "here is what we did not".
+
+Kept beside the handlers deliberately. A branch added to a handler
+without an entry here is invisible to the coverage report, which is the
+one failure mode this file exists to prevent -- so the pair is a single
+edit, and `branches_catalogued` below fails when it is not. -/
+def branchCatalogue : List Branch :=
+  [ { handler := "P-01", point := "branch", taken := "absent" },
+    { handler := "P-01", point := "branch", taken := "found" },
+    { handler := "P-02", point := "birth", taken := "born-dead-rejected-timedout" },
+    { handler := "P-02", point := "birth", taken := "born-dead-targeted-task-fulfilled" },
+    { handler := "P-02", point := "birth", taken := "born-dead-timer-resolved" },
+    { handler := "P-02", point := "birth", taken := "born-live-targeted" },
+    { handler := "P-02", point := "birth", taken := "born-live-targeted-delayed" },
+    { handler := "P-02", point := "birth", taken := "born-live-untargeted" },
+    { handler := "P-02", point := "branch", taken := "created" },
+    { handler := "P-02", point := "branch", taken := "idempotent-echo" },
+    { handler := "P-02", point := "branch", taken := "timer-targeted" },
+    { handler := "P-03", point := "branch", taken := "absent" },
+    { handler := "P-03", point := "branch", taken := "already-settled" },
+    { handler := "P-03", point := "branch", taken := "settled" },
+    { handler := "P-03", point := "branch", taken := "unsettable" },
+    { handler := "P-04", point := "branch", taken := "awaited-absent" },
+    { handler := "P-04", point := "branch", taken := "awaited-internal" },
+    { handler := "P-04", point := "branch", taken := "awaiter-absent" },
+    { handler := "P-04", point := "branch", taken := "awaiter-untargeted" },
+    { handler := "P-04", point := "branch", taken := "self" },
+    { handler := "P-04", point := "callback", taken := "awaited-settled" },
+    { handler := "P-04", point := "callback", taken := "awaiter-not-live" },
+    { handler := "P-04", point := "callback", taken := "registered" },
+    { handler := "P-05", point := "branch", taken := "awaited-absent" },
+    { handler := "P-05", point := "branch", taken := "awaited-internal" },
+    { handler := "P-05", point := "branch", taken := "awaited-settled" },
+    { handler := "P-05", point := "branch", taken := "bad-address" },
+    { handler := "P-05", point := "branch", taken := "registered" },
+    { handler := "T-01", point := "branch", taken := "found" },
+    { handler := "T-01", point := "branch", taken := "promise-absent" },
+    { handler := "T-01", point := "branch", taken := "task-absent" },
+    { handler := "T-02", point := "branch", taken := "already-fulfilled" },
+    { handler := "T-02", point := "branch", taken := "born-dead-fulfilled" },
+    { handler := "T-02", point := "branch", taken := "born-live-acquired" },
+    { handler := "T-02", point := "branch", taken := "malformed-action" },
+    { handler := "T-02", point := "branch", taken := "promise-untargeted" },
+    { handler := "T-02", point := "branch", taken := "reacquired" },
+    { handler := "T-02", point := "branch", taken := "task-absent" },
+    { handler := "T-02", point := "branch", taken := "task-not-pending" },
+    { handler := "T-03", point := "branch", taken := "acquired" },
+    { handler := "T-03", point := "branch", taken := "promise-absent" },
+    { handler := "T-03", point := "branch", taken := "promise-not-live" },
+    { handler := "T-03", point := "branch", taken := "task-absent" },
+    { handler := "T-03", point := "branch", taken := "task-wrong-state" },
+    { handler := "T-03", point := "branch", taken := "version-mismatch" },
+    { handler := "T-04", point := "branch", taken := "fenced-create" },
+    { handler := "T-04", point := "branch", taken := "fenced-settle" },
+    { handler := "T-04", point := "branch", taken := "promise-absent" },
+    { handler := "T-04", point := "branch", taken := "promise-not-live" },
+    { handler := "T-04", point := "branch", taken := "self-target" },
+    { handler := "T-04", point := "branch", taken := "task-absent" },
+    { handler := "T-04", point := "branch", taken := "task-wrong-state" },
+    { handler := "T-04", point := "branch", taken := "version-mismatch" },
+    { handler := "T-05", point := "branch", taken := "lease-extended" },
+    { handler := "T-05", point := "branch", taken := "refused" },
+    { handler := "T-05", point := "branch", taken := "task-absent" },
+    { handler := "T-06", point := "branch", taken := "awaited-already-settled" },
+    { handler := "T-06", point := "branch", taken := "awaited-unusable" },
+    { handler := "T-06", point := "branch", taken := "duplicate-awaited" },
+    { handler := "T-06", point := "branch", taken := "empty-actions" },
+    { handler := "T-06", point := "branch", taken := "promise-absent" },
+    { handler := "T-06", point := "branch", taken := "promise-not-live" },
+    { handler := "T-06", point := "branch", taken := "self-awaited" },
+    { handler := "T-06", point := "branch", taken := "suspended" },
+    { handler := "T-06", point := "branch", taken := "task-absent" },
+    { handler := "T-06", point := "branch", taken := "task-wrong-state" },
+    { handler := "T-06", point := "branch", taken := "version-mismatch" },
+    { handler := "T-06", point := "callback", taken := "awaited-absent" },
+    { handler := "T-06", point := "callback", taken := "registered" },
+    { handler := "T-07", point := "branch", taken := "fulfilled" },
+    { handler := "T-07", point := "branch", taken := "promise-absent" },
+    { handler := "T-07", point := "branch", taken := "promise-not-live" },
+    { handler := "T-07", point := "branch", taken := "task-absent" },
+    { handler := "T-07", point := "branch", taken := "task-wrong-state" },
+    { handler := "T-07", point := "branch", taken := "unsettable" },
+    { handler := "T-07", point := "branch", taken := "version-mismatch" },
+    { handler := "T-08", point := "branch", taken := "promise-absent" },
+    { handler := "T-08", point := "branch", taken := "promise-not-live" },
+    { handler := "T-08", point := "branch", taken := "released" },
+    { handler := "T-08", point := "branch", taken := "task-absent" },
+    { handler := "T-08", point := "branch", taken := "task-wrong-state" },
+    { handler := "T-08", point := "branch", taken := "version-mismatch" },
+    { handler := "T-09", point := "branch", taken := "already-fulfilled" },
+    { handler := "T-09", point := "branch", taken := "already-halted" },
+    { handler := "T-09", point := "branch", taken := "halted" },
+    { handler := "T-09", point := "branch", taken := "promise-absent" },
+    { handler := "T-09", point := "branch", taken := "task-absent" },
+    { handler := "T-10", point := "branch", taken := "not-halted" },
+    { handler := "T-10", point := "branch", taken := "promise-not-live" },
+    { handler := "T-10", point := "branch", taken := "task-absent" },
+    { handler := "τ-lease", point := "branch", taken := "expired" },
+    { handler := "τ-lease", point := "branch", taken := "not-due" },
+    { handler := "τ-lease", point := "branch", taken := "promise-absent" },
+    { handler := "τ-lease", point := "branch", taken := "promise-not-live" },
+    { handler := "τ-lease", point := "branch", taken := "task-absent" },
+    { handler := "τ-lease", point := "branch", taken := "unarmed" },
+    { handler := "τ-listener", point := "branch", taken := "absent" },
+    { handler := "τ-listener", point := "branch", taken := "awaited-pending" },
+    { handler := "τ-listener", point := "branch", taken := "delivered" },
+    { handler := "τ-listener", point := "branch", taken := "no-such-listener" },
+    { handler := "τ-promise-timeout", point := "branch", taken := "absent" },
+    { handler := "τ-promise-timeout", point := "branch", taken := "materialized" },
+    { handler := "τ-promise-timeout", point := "branch", taken := "not-due" },
+    { handler := "τ-resume", point := "outcome", taken := "absent" },
+    { handler := "τ-resume", point := "outcome", taken := "buffered" },
+    { handler := "τ-resume", point := "outcome", taken := "duplicate" },
+    { handler := "τ-resume", point := "outcome", taken := "expired" },
+    { handler := "τ-resume", point := "outcome", taken := "fulfilled" },
+    { handler := "τ-resume", point := "outcome", taken := "resumed" },
+    { handler := "τ-retry", point := "branch", taken := "dispatched" },
+    { handler := "τ-retry", point := "branch", taken := "not-due" },
+    { handler := "τ-retry", point := "branch", taken := "promise-absent" },
+    { handler := "τ-retry", point := "branch", taken := "promise-not-live" },
+    { handler := "τ-retry", point := "branch", taken := "task-absent" },
+    { handler := "τ-retry", point := "branch", taken := "unarmed" } ]
+
+/-- Branches a run reached that the catalogue does not list. -/
+def uncatalogued (bs : List Branch) : List Branch :=
+  bs.filter (fun b => !branchCatalogue.contains b) |>.eraseDups
+
+/-- Catalogued branches a run did not reach -- the residue, by name. -/
+def unreached (bs : List Branch) : List Branch :=
+  branchCatalogue.filter (fun b => !bs.contains b)
 
 end E
 end AbstractModel
