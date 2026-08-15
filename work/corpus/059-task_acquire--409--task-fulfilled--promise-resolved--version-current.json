@@ -1,0 +1,14 @@
+{
+  "name": "task_acquire--409--task-fulfilled--promise-resolved--version-current",
+  "witness": "task.acquire/409/task:fulfilled/promise:resolved/version-current",
+  "covers": [
+    "task.acquire/409/task:fulfilled/promise:resolved/version-current",
+    "task.create/200/promise:absent/born-live",
+    "task.fulfill/200/task:acquired.lease-live/promise:live/version-current/to:resolved"
+  ],
+  "from": "search: seed 37",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

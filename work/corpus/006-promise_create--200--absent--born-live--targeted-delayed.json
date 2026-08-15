@@ -1,0 +1,12 @@
+{
+  "name": "promise_create--200--absent--born-live--targeted-delayed",
+  "witness": "promise.create/200/absent/born-live/targeted-delayed",
+  "covers": [
+    "promise.create/200/absent/born-live/targeted-delayed"
+  ],
+  "from": "template: a delayed first dispatch",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

@@ -1,0 +1,3 @@
+{"kind":"task.create","now":1007,"req":{"pid":"p0","ttl":500,"action":{"kind":"promise.create","head":{},"data":{"id":"o.x0","timeoutAt":31007,"param":{},"tags":{"resonate:origin":"o","resonate:target":"poll://any@w1"}}}},"res":{"kind":"task.create","head":{"status":200},"data":{"promise":{"id":"o.x0","state":"pending","param":{},"value":{},"tags":{"resonate:origin":"o","resonate:target":"poll://any@w1"},"timeoutAt":31007,"createdAt":1007},"task":{"id":"o.x0","state":"acquired","version":1,"resumes":0,"ttl":500,"pid":"p0"}}}}
+{"kind":"tau.promise_timeout","now":64840,"target":"o.x0","effect":"fired"}
+{"kind":"task.release","now":64878,"req":{"id":"o.x0","version":0},"res":{"kind":"task.release","head":{"status":409},"data":{}}}

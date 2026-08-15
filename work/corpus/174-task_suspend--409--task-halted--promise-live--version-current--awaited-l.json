@@ -1,0 +1,15 @@
+{
+  "name": "task_suspend--409--task-halted--promise-live--version-current--awaited-live-external",
+  "witness": "task.suspend/409/task:halted/promise:live/version-current/awaited:live:external",
+  "covers": [
+    "promise.create/200/absent/born-live/external",
+    "task.create/200/promise:absent/born-live",
+    "task.halt/200/task:acquired.lease-live/promise:live",
+    "task.suspend/409/task:halted/promise:live/version-current/awaited:live:external"
+  ],
+  "from": "search: seed 135",
+  "steps": 4,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

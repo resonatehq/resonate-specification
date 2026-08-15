@@ -1,0 +1,14 @@
+{
+  "name": "task_continue--409--task-fulfilled--promise-resolved",
+  "witness": "task.continue/409/task:fulfilled/promise:resolved",
+  "covers": [
+    "task.continue/409/task:fulfilled/promise:resolved",
+    "task.create/200/promise:absent/born-live",
+    "task.fulfill/200/task:acquired.lease-live/promise:live/version-current/to:resolved"
+  ],
+  "from": "template: halt a fulfilled task",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

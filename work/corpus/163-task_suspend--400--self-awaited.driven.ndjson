@@ -1,0 +1,1 @@
+{"kind":"task.suspend","now":1030,"req":{"id":"o.x","version":1,"actions":[{"kind":"promise.register_callback","head":{},"data":{"awaited":"o.x","awaiter":"o.x"}}]},"res":{"kind":"task.suspend","head":{"status":400},"data":{}}}

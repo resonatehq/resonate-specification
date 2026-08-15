@@ -1,0 +1,1 @@
+{"kind":"task.fulfill","now":1010,"req":{"id":"o.x","version":1,"action":{"kind":"promise.settle","head":{},"data":{"id":"o.x","state":"pending","value":{}}}},"res":{"kind":"task.fulfill","head":{"status":400},"data":{}}}

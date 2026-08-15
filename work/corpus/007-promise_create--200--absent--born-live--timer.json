@@ -1,0 +1,12 @@
+{
+  "name": "promise_create--200--absent--born-live--timer",
+  "witness": "promise.create/200/absent/born-live/timer",
+  "covers": [
+    "promise.create/200/absent/born-live/timer"
+  ],
+  "from": "search: seed 37",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

@@ -1,0 +1,12 @@
+{
+  "name": "promise_create--200--absent--born-dead--timer",
+  "witness": "promise.create/200/absent/born-dead/timer",
+  "covers": [
+    "promise.create/200/absent/born-dead/timer"
+  ],
+  "from": "template: timer born past its deadline resolves",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

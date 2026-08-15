@@ -1,0 +1,14 @@
+{
+  "name": "task_release--409--task-fulfilled--promise-rejected_timedout--version-stale",
+  "witness": "task.release/409/task:fulfilled/promise:rejected_timedout/version-stale",
+  "covers": [
+    "task.create/200/promise:absent/born-live",
+    "task.release/409/task:fulfilled/promise:rejected_timedout/version-stale",
+    "tau.promise_timeout/fired"
+  ],
+  "from": "search: seed 172",
+  "steps": 2,
+  "taus": 1,
+  "expectedOutbox": [],
+  "tier": "both"
+}

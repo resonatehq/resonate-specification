@@ -1,0 +1,12 @@
+{
+  "name": "task_acquire--404--task-absent--promise-absent",
+  "witness": "task.acquire/404/task:absent/promise:absent",
+  "covers": [
+    "task.acquire/404/task:absent/promise:absent"
+  ],
+  "from": "template: reads of what does not exist",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

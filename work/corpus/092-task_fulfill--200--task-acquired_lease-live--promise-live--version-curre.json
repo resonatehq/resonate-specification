@@ -1,0 +1,13 @@
+{
+  "name": "task_fulfill--200--task-acquired_lease-live--promise-live--version-current--to-rejected_canceled",
+  "witness": "task.fulfill/200/task:acquired.lease-live/promise:live/version-current/to:rejected_canceled",
+  "covers": [
+    "task.create/200/promise:absent/born-live",
+    "task.fulfill/200/task:acquired.lease-live/promise:live/version-current/to:rejected_canceled"
+  ],
+  "from": "template: fulfil refusals",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

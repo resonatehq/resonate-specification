@@ -1,0 +1,12 @@
+{
+  "name": "promise_create--200--absent--born-live--targeted",
+  "witness": "promise.create/200/absent/born-live/targeted",
+  "covers": [
+    "promise.create/200/absent/born-live/targeted"
+  ],
+  "from": "template: retry re-dispatches a pending task",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

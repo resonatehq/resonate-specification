@@ -1,0 +1,15 @@
+{
+  "name": "task_continue--404--task-absent--promise-resolved",
+  "witness": "task.continue/404/task:absent/promise:resolved",
+  "covers": [
+    "task.continue/404/task:absent/promise:resolved",
+    "task.create/200/promise:absent/born-live",
+    "task.fence/200/task:acquired.lease-expired/promise:live/version-current/inner:promise.create:200",
+    "task.fence/200/task:acquired.lease-expired/promise:live/version-current/inner:promise.settle:200"
+  ],
+  "from": "search: seed 24",
+  "steps": 4,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

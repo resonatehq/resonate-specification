@@ -1,0 +1,12 @@
+{
+  "name": "promise_register_callback--400--self",
+  "witness": "promise.register_callback/400/self",
+  "covers": [
+    "promise.register_callback/400/self"
+  ],
+  "from": "template: callbacks",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

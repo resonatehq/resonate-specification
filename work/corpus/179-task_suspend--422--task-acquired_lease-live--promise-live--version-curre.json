@@ -1,0 +1,13 @@
+{
+  "name": "task_suspend--422--task-acquired_lease-live--promise-live--version-current--awaited-absent",
+  "witness": "task.suspend/422/task:acquired.lease-live/promise:live/version-current/awaited:absent",
+  "covers": [
+    "task.create/200/promise:absent/born-live",
+    "task.suspend/422/task:acquired.lease-live/promise:live/version-current/awaited:absent"
+  ],
+  "from": "template: suspend refusals",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

@@ -1,0 +1,15 @@
+{
+  "name": "task_suspend--409--task-fulfilled--promise-rejected_timedout--version-current--awaited-rejected_timedout-external",
+  "witness": "task.suspend/409/task:fulfilled/promise:rejected_timedout/version-current/awaited:rejected_timedout:external",
+  "covers": [
+    "promise.create/200/absent/born-dead/external",
+    "task.acquire/409/task:acquired.lease-expired/promise:logically-dead/version-stale",
+    "task.create/200/promise:absent/born-live",
+    "task.suspend/409/task:fulfilled/promise:rejected_timedout/version-current/awaited:rejected_timedout:external"
+  ],
+  "from": "search: seed 4",
+  "steps": 4,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

@@ -1,0 +1,13 @@
+{
+  "name": "promise_create--200--logically-dead",
+  "witness": "promise.create/200/logically-dead",
+  "covers": [
+    "promise.create/200/logically-dead",
+    "task.create/200/promise:absent/born-live"
+  ],
+  "from": "search: seed 4",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

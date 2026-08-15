@@ -1,0 +1,12 @@
+{
+  "name": "tau_task_lease--no-op",
+  "witness": "tau.task_lease/no-op",
+  "covers": [
+    "tau.task_lease/no-op"
+  ],
+  "from": "template: lease expiry is a no-op while the lease holds",
+  "steps": 0,
+  "taus": 1,
+  "expectedOutbox": [],
+  "tier": "driven"
+}

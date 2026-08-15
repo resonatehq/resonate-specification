@@ -1,0 +1,13 @@
+{
+  "name": "promise_settle--200--resolved--to-resolved",
+  "witness": "promise.settle/200/resolved/to:resolved",
+  "covers": [
+    "promise.create/200/absent/born-dead/timer",
+    "promise.settle/200/resolved/to:resolved"
+  ],
+  "from": "search: seed 0",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

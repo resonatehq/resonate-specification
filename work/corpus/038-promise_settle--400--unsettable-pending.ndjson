@@ -1,0 +1,1 @@
+{"kind":"promise.settle","now":1010,"req":{"id":"o.a","state":"pending","value":{}},"res":{"kind":"promise.settle","head":{"status":400},"data":{}}}

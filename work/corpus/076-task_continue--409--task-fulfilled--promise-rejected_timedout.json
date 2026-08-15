@@ -1,0 +1,14 @@
+{
+  "name": "task_continue--409--task-fulfilled--promise-rejected_timedout",
+  "witness": "task.continue/409/task:fulfilled/promise:rejected_timedout",
+  "covers": [
+    "task.continue/409/task:fulfilled/promise:rejected_timedout",
+    "task.create/200/promise:absent/born-live",
+    "task.halt/409/task:acquired.lease-expired/promise:logically-dead"
+  ],
+  "from": "template: halt and continue on a dead promise",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

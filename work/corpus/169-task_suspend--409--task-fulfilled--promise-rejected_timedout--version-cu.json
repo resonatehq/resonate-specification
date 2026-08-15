@@ -1,0 +1,16 @@
+{
+  "name": "task_suspend--409--task-fulfilled--promise-rejected_timedout--version-current--awaited-resolved-timer",
+  "witness": "task.suspend/409/task:fulfilled/promise:rejected_timedout/version-current/awaited:resolved:timer",
+  "covers": [
+    "promise.create/200/absent/born-live/timer",
+    "promise.register_listener/200/logically-dead/shape:timer",
+    "task.acquire/409/task:acquired.lease-expired/promise:logically-dead/version-stale",
+    "task.create/200/promise:absent/born-live",
+    "task.suspend/409/task:fulfilled/promise:rejected_timedout/version-current/awaited:resolved:timer"
+  ],
+  "from": "search: seed 126",
+  "steps": 5,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

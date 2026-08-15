@@ -1,0 +1,14 @@
+{
+  "name": "task_acquire--409--task-fulfilled--promise-rejected_timedout--version-stale",
+  "witness": "task.acquire/409/task:fulfilled/promise:rejected_timedout/version-stale",
+  "covers": [
+    "task.acquire/409/task:fulfilled/promise:rejected_timedout/version-stale",
+    "task.create/200/promise:absent/born-live",
+    "task.get/200/task:acquired.lease-expired/promise:logically-dead"
+  ],
+  "from": "search: seed 4",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

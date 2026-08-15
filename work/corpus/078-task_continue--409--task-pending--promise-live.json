@@ -1,0 +1,15 @@
+{
+  "name": "task_continue--409--task-pending--promise-live",
+  "witness": "task.continue/409/task:pending/promise:live",
+  "covers": [
+    "task.continue/200/task:halted/promise:live",
+    "task.continue/409/task:pending/promise:live",
+    "task.create/200/promise:absent/born-live",
+    "task.halt/200/task:acquired.lease-live/promise:live"
+  ],
+  "from": "template: release and halt and continue",
+  "steps": 4,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

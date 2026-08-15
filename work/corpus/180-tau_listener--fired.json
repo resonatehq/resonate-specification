@@ -1,0 +1,17 @@
+{
+  "name": "tau_listener--fired",
+  "witness": "tau.listener/fired",
+  "covers": [
+    "promise.create/200/absent/born-live/external",
+    "promise.register_listener/200/live/shape:external",
+    "promise.settle/200/live/to:resolved",
+    "tau.listener/fired"
+  ],
+  "from": "template: listeners",
+  "steps": 3,
+  "taus": 1,
+  "expectedOutbox": [
+    "unblock o.a -\u003e https://l"
+  ],
+  "tier": "both"
+}

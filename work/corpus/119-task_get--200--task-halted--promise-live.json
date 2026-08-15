@@ -1,0 +1,14 @@
+{
+  "name": "task_get--200--task-halted--promise-live",
+  "witness": "task.get/200/task:halted/promise:live",
+  "covers": [
+    "promise.create/200/absent/born-live/targeted",
+    "task.get/200/task:halted/promise:live",
+    "task.halt/200/task:pending/promise:live"
+  ],
+  "from": "search: seed 50",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

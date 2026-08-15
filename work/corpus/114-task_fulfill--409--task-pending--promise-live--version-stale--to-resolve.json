@@ -1,0 +1,14 @@
+{
+  "name": "task_fulfill--409--task-pending--promise-live--version-stale--to-resolved",
+  "witness": "task.fulfill/409/task:pending/promise:live/version-stale/to:resolved",
+  "covers": [
+    "task.create/200/promise:absent/born-live",
+    "task.fulfill/409/task:pending/promise:live/version-stale/to:resolved",
+    "tau.task_lease/fired"
+  ],
+  "from": "search: seed 66",
+  "steps": 2,
+  "taus": 1,
+  "expectedOutbox": [],
+  "tier": "both"
+}

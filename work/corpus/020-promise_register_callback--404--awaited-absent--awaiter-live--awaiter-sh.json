@@ -1,0 +1,13 @@
+{
+  "name": "promise_register_callback--404--awaited-absent--awaiter-live--awaiter-shape-targeted",
+  "witness": "promise.register_callback/404/awaited:absent/awaiter:live/awaiter-shape:targeted",
+  "covers": [
+    "promise.register_callback/404/awaited:absent/awaiter:live/awaiter-shape:targeted",
+    "task.create/200/promise:absent/born-live"
+  ],
+  "from": "template: callbacks",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

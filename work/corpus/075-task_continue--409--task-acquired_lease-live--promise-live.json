@@ -1,0 +1,13 @@
+{
+  "name": "task_continue--409--task-acquired_lease-live--promise-live",
+  "witness": "task.continue/409/task:acquired.lease-live/promise:live",
+  "covers": [
+    "task.continue/409/task:acquired.lease-live/promise:live",
+    "task.create/200/promise:absent/born-live"
+  ],
+  "from": "search: seed 5",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

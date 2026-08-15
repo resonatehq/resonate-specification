@@ -1,0 +1,14 @@
+{
+  "name": "task_acquire--409--task-acquired_lease-expired--promise-live--version-future",
+  "witness": "task.acquire/409/task:acquired.lease-expired/promise:live/version-future",
+  "covers": [
+    "promise.create/200/absent/born-live/targeted",
+    "task.acquire/200/task:pending/promise:live/version-current",
+    "task.acquire/409/task:acquired.lease-expired/promise:live/version-future"
+  ],
+  "from": "search: seed 53",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

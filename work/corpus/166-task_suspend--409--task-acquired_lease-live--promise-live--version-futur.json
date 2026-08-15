@@ -1,0 +1,14 @@
+{
+  "name": "task_suspend--409--task-acquired_lease-live--promise-live--version-future--awaited-live-external",
+  "witness": "task.suspend/409/task:acquired.lease-live/promise:live/version-future/awaited:live:external",
+  "covers": [
+    "promise.create/200/absent/born-live/external",
+    "task.create/200/promise:absent/born-live",
+    "task.suspend/409/task:acquired.lease-live/promise:live/version-future/awaited:live:external"
+  ],
+  "from": "template: suspend refusals",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

@@ -1,0 +1,15 @@
+{
+  "name": "task_fulfill--409--task-acquired_lease-expired--promise-logically-dead--version-current--to-resolved",
+  "witness": "task.fulfill/409/task:acquired.lease-expired/promise:logically-dead/version-current/to:resolved",
+  "covers": [
+    "promise.create/200/absent/born-live/targeted",
+    "task.acquire/200/task:pending/promise:live/version-current",
+    "task.fulfill/409/task:acquired.lease-expired/promise:logically-dead/version-current/to:resolved",
+    "task.release/200/task:acquired.lease-live/promise:live/version-current"
+  ],
+  "from": "search: seed 388",
+  "steps": 5,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

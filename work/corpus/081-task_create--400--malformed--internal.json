@@ -1,0 +1,12 @@
+{
+  "name": "task_create--400--malformed--internal",
+  "witness": "task.create/400/malformed/internal",
+  "covers": [
+    "task.create/400/malformed/internal"
+  ],
+  "from": "template: task.create births and re-acquires",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

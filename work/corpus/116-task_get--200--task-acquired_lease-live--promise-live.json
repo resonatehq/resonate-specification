@@ -1,0 +1,13 @@
+{
+  "name": "task_get--200--task-acquired_lease-live--promise-live",
+  "witness": "task.get/200/task:acquired.lease-live/promise:live",
+  "covers": [
+    "task.create/200/promise:absent/born-live",
+    "task.get/200/task:acquired.lease-live/promise:live"
+  ],
+  "from": "template: lease expiry is a no-op while the lease holds",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

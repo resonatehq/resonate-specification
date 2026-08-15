@@ -1,0 +1,13 @@
+{
+  "name": "task_release--409--task-acquired_lease-expired--promise-logically-dead--version-future",
+  "witness": "task.release/409/task:acquired.lease-expired/promise:logically-dead/version-future",
+  "covers": [
+    "task.create/200/promise:absent/born-live",
+    "task.release/409/task:acquired.lease-expired/promise:logically-dead/version-future"
+  ],
+  "from": "search: seed 222",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

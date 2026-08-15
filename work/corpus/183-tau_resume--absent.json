@@ -1,0 +1,13 @@
+{
+  "name": "tau_resume--absent",
+  "witness": "tau.resume/absent",
+  "covers": [
+    "task.create/200/promise:absent/born-live",
+    "tau.resume/absent"
+  ],
+  "from": "search: seed 280",
+  "steps": 1,
+  "taus": 1,
+  "expectedOutbox": [],
+  "tier": "both"
+}

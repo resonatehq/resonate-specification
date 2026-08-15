@@ -1,0 +1,12 @@
+{
+  "name": "task_release--404--task-absent--promise-absent",
+  "witness": "task.release/404/task:absent/promise:absent",
+  "covers": [
+    "task.release/404/task:absent/promise:absent"
+  ],
+  "from": "search: seed 1",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

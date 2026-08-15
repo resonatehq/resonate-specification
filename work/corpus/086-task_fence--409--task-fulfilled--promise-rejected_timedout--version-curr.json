@@ -1,0 +1,14 @@
+{
+  "name": "task_fence--409--task-fulfilled--promise-rejected_timedout--version-current",
+  "witness": "task.fence/409/task:fulfilled/promise:rejected_timedout/version-current",
+  "covers": [
+    "task.create/200/promise:absent/born-live",
+    "task.fence/409/task:fulfilled/promise:rejected_timedout/version-current",
+    "task.heartbeat/200/task:acquired.lease-expired.mine.promise:logically-dead"
+  ],
+  "from": "search: seed 4",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

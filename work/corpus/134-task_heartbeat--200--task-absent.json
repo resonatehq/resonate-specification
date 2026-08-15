@@ -1,0 +1,12 @@
+{
+  "name": "task_heartbeat--200--task-absent",
+  "witness": "task.heartbeat/200/task:absent",
+  "covers": [
+    "task.heartbeat/200/task:absent"
+  ],
+  "from": "template: heartbeat holds the lease",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

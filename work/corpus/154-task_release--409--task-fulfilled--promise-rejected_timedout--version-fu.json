@@ -1,0 +1,14 @@
+{
+  "name": "task_release--409--task-fulfilled--promise-rejected_timedout--version-future",
+  "witness": "task.release/409/task:fulfilled/promise:rejected_timedout/version-future",
+  "covers": [
+    "promise.create/200/absent/born-live/targeted",
+    "task.release/409/task:fulfilled/promise:rejected_timedout/version-future",
+    "task.suspend/409/task:pending/promise:logically-dead/version-future/awaited:absent"
+  ],
+  "from": "search: seed 76",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

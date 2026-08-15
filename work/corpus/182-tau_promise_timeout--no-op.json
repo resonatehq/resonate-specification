@@ -1,0 +1,12 @@
+{
+  "name": "tau_promise_timeout--no-op",
+  "witness": "tau.promise_timeout/no-op",
+  "covers": [
+    "tau.promise_timeout/no-op"
+  ],
+  "from": "template: the promise timeout τ, and firing it twice",
+  "steps": 0,
+  "taus": 1,
+  "expectedOutbox": [],
+  "tier": "driven"
+}

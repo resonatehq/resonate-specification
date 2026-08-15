@@ -1,0 +1,12 @@
+{
+  "name": "tau_listener--no-op",
+  "witness": "tau.listener/no-op",
+  "covers": [
+    "tau.listener/no-op"
+  ],
+  "from": "template: τ no-ops: nothing is armed",
+  "steps": 0,
+  "taus": 1,
+  "expectedOutbox": [],
+  "tier": "driven"
+}

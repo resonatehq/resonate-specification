@@ -1,0 +1,14 @@
+{
+  "name": "promise_register_callback--200--awaited-live--awaiter-live--awaited-shape-external--awaiter-shape-targeted",
+  "witness": "promise.register_callback/200/awaited:live/awaiter:live/awaited-shape:external/awaiter-shape:targeted",
+  "covers": [
+    "promise.create/200/absent/born-live/external",
+    "promise.register_callback/200/awaited:live/awaiter:live/awaited-shape:external/awaiter-shape:targeted",
+    "task.create/200/promise:absent/born-live"
+  ],
+  "from": "template: callbacks",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

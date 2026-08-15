@@ -1,0 +1,14 @@
+{
+  "name": "task_fulfill--404--task-absent--promise-live--to-resolved",
+  "witness": "task.fulfill/404/task:absent/promise:live/to:resolved",
+  "covers": [
+    "task.create/200/promise:absent/born-live",
+    "task.fence/200/task:acquired.lease-live/promise:live/version-current/inner:promise.create:200",
+    "task.fulfill/404/task:absent/promise:live/to:resolved"
+  ],
+  "from": "search: seed 1",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

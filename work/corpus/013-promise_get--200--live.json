@@ -1,0 +1,13 @@
+{
+  "name": "promise_get--200--live",
+  "witness": "promise.get/200/live",
+  "covers": [
+    "promise.create/200/absent/born-live/external",
+    "promise.get/200/live"
+  ],
+  "from": "template: promise lifecycle, external",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

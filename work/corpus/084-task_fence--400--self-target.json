@@ -1,0 +1,12 @@
+{
+  "name": "task_fence--400--self-target",
+  "witness": "task.fence/400/self-target",
+  "covers": [
+    "task.fence/400/self-target"
+  ],
+  "from": "template: fencing",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

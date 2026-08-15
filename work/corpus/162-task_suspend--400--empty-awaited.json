@@ -1,0 +1,12 @@
+{
+  "name": "task_suspend--400--empty-awaited",
+  "witness": "task.suspend/400/empty-awaited",
+  "covers": [
+    "task.suspend/400/empty-awaited"
+  ],
+  "from": "template: suspend refusals",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

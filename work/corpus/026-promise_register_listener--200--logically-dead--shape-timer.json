@@ -1,0 +1,13 @@
+{
+  "name": "promise_register_listener--200--logically-dead--shape-timer",
+  "witness": "promise.register_listener/200/logically-dead/shape:timer",
+  "covers": [
+    "promise.create/200/absent/born-live/timer",
+    "promise.register_listener/200/logically-dead/shape:timer"
+  ],
+  "from": "search: seed 126",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

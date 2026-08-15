@@ -1,0 +1,14 @@
+{
+  "name": "task_fulfill--409--task-fulfilled--promise-rejected_timedout--version-stale--to-resolved",
+  "witness": "task.fulfill/409/task:fulfilled/promise:rejected_timedout/version-stale/to:resolved",
+  "covers": [
+    "task.create/200/promise:absent/born-live",
+    "task.fulfill/409/task:acquired.lease-expired/promise:logically-dead/version-future/to:resolved",
+    "task.fulfill/409/task:fulfilled/promise:rejected_timedout/version-stale/to:resolved"
+  ],
+  "from": "search: seed 62",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

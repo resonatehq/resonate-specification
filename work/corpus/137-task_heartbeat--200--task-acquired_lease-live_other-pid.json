@@ -1,0 +1,13 @@
+{
+  "name": "task_heartbeat--200--task-acquired_lease-live_other-pid",
+  "witness": "task.heartbeat/200/task:acquired.lease-live.other-pid",
+  "covers": [
+    "task.create/200/promise:absent/born-live",
+    "task.heartbeat/200/task:acquired.lease-live.other-pid"
+  ],
+  "from": "template: heartbeat holds the lease",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

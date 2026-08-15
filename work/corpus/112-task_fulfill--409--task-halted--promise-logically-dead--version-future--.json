@@ -1,0 +1,14 @@
+{
+  "name": "task_fulfill--409--task-halted--promise-logically-dead--version-future--to-resolved",
+  "witness": "task.fulfill/409/task:halted/promise:logically-dead/version-future/to:resolved",
+  "covers": [
+    "task.create/200/promise:absent/born-live",
+    "task.fulfill/409/task:halted/promise:logically-dead/version-future/to:resolved",
+    "task.halt/200/task:acquired.lease-live/promise:live"
+  ],
+  "from": "search: seed 92",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

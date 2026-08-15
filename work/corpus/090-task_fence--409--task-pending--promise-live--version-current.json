@@ -1,0 +1,14 @@
+{
+  "name": "task_fence--409--task-pending--promise-live--version-current",
+  "witness": "task.fence/409/task:pending/promise:live/version-current",
+  "covers": [
+    "task.create/200/promise:absent/born-live",
+    "task.fence/409/task:pending/promise:live/version-current",
+    "task.release/200/task:acquired.lease-live/promise:live/version-current"
+  ],
+  "from": "template: fencing",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

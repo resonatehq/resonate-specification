@@ -1,0 +1,12 @@
+{
+  "name": "promise_create--200--absent--born-live--external",
+  "witness": "promise.create/200/absent/born-live/external",
+  "covers": [
+    "promise.create/200/absent/born-live/external"
+  ],
+  "from": "template: promise create is idempotent",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

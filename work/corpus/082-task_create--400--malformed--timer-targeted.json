@@ -1,0 +1,12 @@
+{
+  "name": "task_create--400--malformed--timer-targeted",
+  "witness": "task.create/400/malformed/timer-targeted",
+  "covers": [
+    "task.create/400/malformed/timer-targeted"
+  ],
+  "from": "template: a timer is never targeted",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

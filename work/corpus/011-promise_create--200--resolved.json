@@ -1,0 +1,15 @@
+{
+  "name": "promise_create--200--resolved",
+  "witness": "promise.create/200/resolved",
+  "covers": [
+    "promise.create/200/resolved",
+    "task.create/200/promise:absent/born-live",
+    "task.fence/200/task:acquired.lease-live/promise:live/version-current/inner:promise.create:200",
+    "task.fence/200/task:acquired.lease-live/promise:live/version-current/inner:promise.settle:200"
+  ],
+  "from": "search: seed 0",
+  "steps": 4,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

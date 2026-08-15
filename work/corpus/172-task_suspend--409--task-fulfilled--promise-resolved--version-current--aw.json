@@ -1,0 +1,15 @@
+{
+  "name": "task_suspend--409--task-fulfilled--promise-resolved--version-current--awaited-live-timer",
+  "witness": "task.suspend/409/task:fulfilled/promise:resolved/version-current/awaited:live:timer",
+  "covers": [
+    "promise.create/200/absent/born-live/timer",
+    "task.create/200/promise:absent/born-live",
+    "task.fulfill/200/task:acquired.lease-live/promise:live/version-current/to:resolved",
+    "task.suspend/409/task:fulfilled/promise:resolved/version-current/awaited:live:timer"
+  ],
+  "from": "search: seed 37",
+  "steps": 4,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

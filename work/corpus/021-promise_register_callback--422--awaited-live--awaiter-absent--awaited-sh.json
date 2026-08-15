@@ -1,0 +1,13 @@
+{
+  "name": "promise_register_callback--422--awaited-live--awaiter-absent--awaited-shape-external",
+  "witness": "promise.register_callback/422/awaited:live/awaiter:absent/awaited-shape:external",
+  "covers": [
+    "promise.create/200/absent/born-live/external",
+    "promise.register_callback/422/awaited:live/awaiter:absent/awaited-shape:external"
+  ],
+  "from": "template: callbacks",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

@@ -1,0 +1,13 @@
+{
+  "name": "task_heartbeat--200--task-acquired_lease-expired_mine_promise-live",
+  "witness": "task.heartbeat/200/task:acquired.lease-expired.mine.promise:live",
+  "covers": [
+    "task.create/200/promise:absent/born-live",
+    "task.heartbeat/200/task:acquired.lease-expired.mine.promise:live"
+  ],
+  "from": "template: heartbeat holds the lease",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

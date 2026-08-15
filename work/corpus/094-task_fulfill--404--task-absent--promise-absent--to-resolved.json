@@ -1,0 +1,12 @@
+{
+  "name": "task_fulfill--404--task-absent--promise-absent--to-resolved",
+  "witness": "task.fulfill/404/task:absent/promise:absent/to:resolved",
+  "covers": [
+    "task.fulfill/404/task:absent/promise:absent/to:resolved"
+  ],
+  "from": "template: fulfil refusals",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

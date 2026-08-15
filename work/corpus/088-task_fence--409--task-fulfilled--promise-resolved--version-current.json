@@ -1,0 +1,14 @@
+{
+  "name": "task_fence--409--task-fulfilled--promise-resolved--version-current",
+  "witness": "task.fence/409/task:fulfilled/promise:resolved/version-current",
+  "covers": [
+    "task.create/200/promise:absent/born-live",
+    "task.fence/409/task:fulfilled/promise:resolved/version-current",
+    "task.fulfill/200/task:acquired.lease-live/promise:live/version-current/to:resolved"
+  ],
+  "from": "search: seed 37",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

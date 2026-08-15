@@ -1,0 +1,12 @@
+{
+  "name": "promise_settle--400--unsettable-rejected_timedout",
+  "witness": "promise.settle/400/unsettable:rejected_timedout",
+  "covers": [
+    "promise.settle/400/unsettable:rejected_timedout"
+  ],
+  "from": "template: settlement refusals",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}
