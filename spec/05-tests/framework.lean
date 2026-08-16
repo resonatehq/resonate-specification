@@ -26,15 +26,18 @@ rides along so a failure says WHERE — `step 4: expected 409, got 200` —
 which is the difference between a test you can act on and one you have
 to bisect.
 
-Assertions read the state directly rather than digging through a
-response, because that is what an implementer checks too: not "what did
-the call return" alone, but "what is true of the server now".
+Every assertion is on what a request ANSWERED. Nothing reads the
+server's state. An implementer porting these has a client and a server
+and nothing else — a test that needs a handle on the promise table is a
+test they cannot run — and it is the discipline the specification keeps
+anyway: the projection exists so that what a client sees is well defined
+independently of what is stored.
 
 ## The two tiers, and why the framework cares
 
-A case that drives internal steps may assert task-facing state
-anywhere, because it fixes the schedule. A case that does not must
-assert task state only at quiescence: the stage of the wake pipeline is
+A case that drives internal steps may assert what `task.get` answers
+anywhere, because it fixes the schedule. A case that does not must ask
+only at quiescence: the stage of the wake pipeline is
 visible at the task interface BY DESIGN, so a conforming implementation
 running its own internal loop can legitimately answer differently
 mid-pipeline. `τ`-driving cases and observational ones are therefore
@@ -183,46 +186,71 @@ def τtaskLease     (id : String) : T Response := act (.τTaskLeaseTimeout id)
 def τresume (awaited awaiter : String) : T Response :=
   act (.τResume { awaited := awaited, awaiter := awaiter })
 
-/-! ### Assertions -/
+/-! ### Assertions
+
+Everything a case asserts is something a CLIENT can see: the status a
+request answered with, and the record it carried back. Nothing here
+reads the server's state.
+
+That is not fastidiousness, it is the whole point of the artifact. An
+implementer porting these has a running server and a client; they do not
+have a handle on its promise table, and a test that needs one is a test
+they cannot run. It is also the discipline the specification itself
+keeps — the projection exists precisely so that what a client sees is
+well defined independently of what is stored — so an assertion on
+stored state can pass against a machine that is observably wrong, and
+fail against one that is observably right. -/
+
+/-- The promise record a response carried back, if it carried one. -/
+def promiseOf : Response → Option PromiseRecord
+  | .promiseGet r              => r.promise
+  | .promiseCreate r           => r.promise
+  | .promiseSettle r           => r.promise
+  | .promiseRegisterCallback r => r.promise
+  | .promiseRegisterListener r => r.promise
+  | .taskCreate r              => r.promise
+  | .taskAcquire r             => r.promise
+  | .taskFulfill r             => r.promise
+  | _                          => none
+
+/-- The task record a response carried back, if it carried one. -/
+def taskOf : Response → Option TaskRecord
+  | .taskGet r    => r.task
+  | .taskCreate r => r.task
+  | .taskAcquire r => r.task
+  | _             => none
 
 def expect (want : Nat) (res : Response) : T Unit :=
   if status res == want then pure () else
     fail s!"expected status {want}, got {status res}"
 
-/-- The promise as an observer sees it: PROJECTED, so a promise past its
-    deadline reads settled whether or not its timeout has fired. Every
-    promise-facing response in the machine projects; a case asserting on
-    the stored state instead would be asserting something no client can
-    see. -/
-def promiseIs (id : String) (st : PromiseState) : T Unit := do
-  let c ← get
-  match c.state.promises.find? (·.id == id) with
-  | none => fail s!"no promise {id}"
+def expectPromise (st : PromiseState) (res : Response) : T Unit :=
+  match promiseOf res with
+  | none   => fail s!"expected a promise in the response, got none"
   | some p =>
-      if (p.project c.now).state == st then pure () else
-        fail s!"promise {id}: expected {repr st}, got {repr (p.project c.now).state}"
+      if p.state == st then pure () else
+        fail s!"expected promise {repr st}, got {repr p.state}"
 
-/-- The task as STORED. Task state is material — claims, leases, fencing
-    — and is deliberately not projected, so this reads the machine
-    rather than a forecast. Assert it mid-pipeline only in a case that
-    drives the internal steps. -/
-def taskIs (id : String) (st : TaskState) : T Unit := do
-  let c ← get
-  match c.state.tasks.find? (·.id == id) with
-  | none => fail s!"no task {id}"
+def expectTask (st : TaskState) (res : Response) : T Unit :=
+  match taskOf res with
+  | none   => fail s!"expected a task in the response, got none"
   | some t =>
       if t.state == st then pure () else
-        fail s!"task {id}: expected {repr st}, got {repr t.state}"
+        fail s!"expected task {repr st}, got {repr t.state}"
 
-def absent (id : String) : T Unit := do
-  let c ← get
-  if (c.state.promises.find? (·.id == id)).isNone then pure () else
-    fail s!"expected no promise {id}"
+def expectVersion (v : Nat) (res : Response) : T Unit :=
+  match taskOf res with
+  | none   => fail s!"expected a task in the response, got none"
+  | some t =>
+      if t.version == v then pure () else
+        fail s!"expected task version {v}, got {t.version}"
 
-/-- The step just run sent exactly these messages. `[]` asserts silence,
-    which is an assertion worth making: most steps send nothing, and a
-    machine that dispatches where the specification does not is wrong in
-    a way no response reveals. -/
+/-- The messages the step just run sent. The second observable channel:
+    not a response to the caller, but a delivery to a worker or a
+    listener, which an implementer observes with a fake endpoint rather
+    than by reading state. `[]` asserts silence, and silence is worth
+    asserting — a machine that dispatches where the specification does
+    not is wrong in a way no response reveals. -/
 def sent (ms : List OutboxEntry) : T Unit := do
   let c ← get
   let same := ms.all c.msg.contains && c.msg.all ms.contains
