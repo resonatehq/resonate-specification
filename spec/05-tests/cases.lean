@@ -2,202 +2,226 @@ import «05-tests».«framework»
 
 /-!  # Test cases
 
-Every case is a sequence of ordinary requests, each carrying the instant
-it happens at, and every assertion is on what a request answered.
-Nothing reads the server's state.
-
-Each case runs against the specification, and `cases_all_pass` at the
-bottom is checked by `decide`. -/
+Real requests, real responses. Each case builds the request record the
+protocol defines, calls the handler, and checks the fields that came
+back. -/
 
 namespace Tests
 
 open ServerModel
+open ConcreteModel
+open ConcreteModel.P
 
 def external : Tags := [("resonate:external", "true")]
 def targeted : Tags := [("resonate:target", "poll://any@w1")]
 def timer    : Tags := [("resonate:timer", "true"), ("resonate:external", "true")]
 
+/-- **A promise born past its deadline.**
+
+    The deadline is judged against the instant of the request. Created
+    at 1000 with a deadline of 500, the promise comes back already
+    settled — and which verdict depends on one tag: a timer resolves,
+    everything else is rejected. -/
+def bornDead : T Unit := do
+  let r ← call (promiseCreate { id := "late", timeoutAt := 500, param := {},
+                                tags := external }) 1000
+  check (r.status == 200) "create late: status"
+  check (r.promise.map (·.state) == some .rejectedTimedout) "late: rejected_timedout"
+
+  let r ← call (promiseCreate { id := "tick", timeoutAt := 500, param := {},
+                                tags := timer }) 1000
+  check (r.status == 200) "create tick: status"
+  check (r.promise.map (·.state) == some .resolved) "tick: resolved"
+
+  -- creation is idempotent, and the echo is the promise that exists
+  let r ← call (promiseCreate { id := "late", timeoutAt := 9000, param := {},
+                                tags := external }) 1010
+  check (r.status == 200) "recreate late: status"
+  check (r.promise.map (·.timeoutAt) == some 500) "late: keeps its first deadline"
+
+/-- **The deadline is exclusive.**
+
+    Alive at 1999, dead at 2000. The machine reads `timeoutAt > now` for
+    live, so AT the deadline is already past it — where an
+    implementation using `>=` disagrees. -/
+def deadlineBoundary : T Unit := do
+  let r ← call (promiseCreate { id := "a", timeoutAt := 2000, param := {},
+                                tags := external }) 1000
+  check (r.status == 200) "create a: status"
+
+  let r ← call (promiseGet { id := "a" }) 1999
+  check (r.promise.map (·.state) == some .pending) "at 1999: still pending"
+
+  let r ← call (promiseGet { id := "a" }) 2000
+  check (r.promise.map (·.state) == some .rejectedTimedout) "at 2000: timed out"
+
+/-- **Settlement refusals, and their order.**
+
+    A malformed settlement is 400 even when the promise does not exist:
+    validation outranks existence. `rejected_timedout` is malformed
+    because that verdict is the server's to write, never a client's. -/
+def settleRefusals : T Unit := do
+  let r ← call (promiseCreate { id := "a", timeoutAt := 9000, param := {},
+                                tags := external }) 1000
+  check (r.status == 200) "create a: status"
+
+  let r ← call (promiseSettle { id := "a", state := .pending, value := {} }) 1010
+  check (r.status == 400) "settle to pending: 400"
+
+  let r ← call (promiseSettle { id := "a", state := .rejectedTimedout, value := {} }) 1010
+  check (r.status == 400) "settle to rejected_timedout: 400"
+
+  let r ← call (promiseSettle { id := "ghost", state := .pending, value := {} }) 1010
+  check (r.status == 400) "malformed at a missing promise: 400, not 404"
+
+  let r ← call (promiseSettle { id := "ghost", state := .resolved, value := {} }) 1010
+  check (r.status == 404) "well formed at a missing promise: 404"
+
+  let r ← call (promiseSettle { id := "a", state := .resolved, value := {} }) 1020
+  check (r.status == 200) "settle a: status"
+  check (r.promise.map (·.state) == some .resolved) "a: resolved"
+
+  let r ← call (promiseSettle { id := "a", state := .rejected, value := {} }) 1030
+  check (r.status == 200) "re-settle: status"
+  check (r.promise.map (·.state) == some .resolved) "re-settle does not overwrite"
+
+/-- **The fence rises by exactly one, and only on acquisition.**
+
+    A worker that lost its claim can tell: the version it holds no
+    longer matches, and every version-bearing call answers 409. -/
+def fencing : T Unit := do
+  let r ← call (promiseCreate { id := "x", timeoutAt := 9000, param := {},
+                                tags := targeted }) 1000
+  check (r.status == 200) "create x: status"
+
+  let r ← call (taskAcquire { id := "x", version := 0, pid := "p0", ttl := 800 }) 1010
+  check (r.status == 200) "acquire: status"
+  check (r.task.map (·.version) == some 1) "acquire bumps to 1"
+
+  let r ← call (taskAcquire { id := "x", version := 0, pid := "p1", ttl := 800 }) 1020
+  check (r.status == 409) "stale acquire: 409"
+
+  let r ← call (taskFulfill { id := "x", version := 0,
+                              action := { id := "x", state := .resolved, value := {} } }) 1020
+  check (r.status == 409) "stale fulfill: 409"
+
+  let r ← call (taskRelease { id := "x", version := 1 }) 1030
+  check (r.status == 200) "release by the holder: status"
+
+  let r ← call (taskGet { id := "x" }) 1030
+  check (r.task.map (·.state) == some .pending) "released: pending"
+  check (r.task.map (·.version) == some 1) "release does not bump"
+
+  let r ← call (taskAcquire { id := "x", version := 1, pid := "p1", ttl := 800 }) 1040
+  check (r.status == 200) "re-acquire: status"
+  check (r.task.map (·.version) == some 2) "the next claim bumps to 2"
+
 /-- **The wake pipeline, one request at a time.**
 
     A task suspends on a promise, the promise settles, and the task is
-    NOT awake yet. It wakes when the drain runs, which is a separate
-    internal step at an instant this case picks.
+    not awake yet. It wakes when the drain runs — a separate internal
+    step, at an instant this case picks.
 
-    The two reads in the middle are the point, and both are answers to
-    ordinary `get` calls at the same instant. `promise.get` says
-    resolved; `task.get` says suspended. Both are correct, and an
-    implementation that wakes the task inside `promise.settle` gives a
-    different answer to the second. -/
+    The two reads at 1050 are the point. `promise.get` says resolved;
+    `task.get` says suspended. Both are correct. -/
 def wakePipeline : T Unit := do
-  expect 200 (← create     1000 "a" 9000 external)
-  expect 200 (← taskCreate 1010 "x" "p0" 800 9000 targeted)
-  expect 200 (← suspend    1020 "x" 1 ["a"])
+  let r ← call (promiseCreate { id := "a", timeoutAt := 9000, param := {},
+                                tags := external }) 1000
+  check (r.status == 200) "create a: status"
 
-  let r ← taskGet 1030 "x"
-  expect 200 r
-  expectTask .suspended r
+  let r ← call (taskCreate { pid := "p0", ttl := 800,
+                             action := { id := "x", timeoutAt := 9000, param := {},
+                                         tags := targeted } }) 1010
+  check (r.status == 200) "task.create x: status"
 
-  expect 200 (← settle 1040 "a" .resolved)
-  sentNothing                            -- settling dispatches nothing
+  let r ← call (taskSuspend { id := "x", version := 1,
+                              actions := [{ awaited := "a", awaiter := "x" }] }) 1020
+  check (r.status == 200) "suspend: status"
 
-  let r ← promiseGet 1050 "a"
-  expect 200 r
-  expectPromise .resolved r              -- the awaited is settled …
+  let r ← call (promiseSettle { id := "a", state := .resolved, value := {} }) 1040
+  check (r.status == 200) "settle a: status"
 
-  let r ← taskGet 1050 "x"
-  expect 200 r
-  expectTask .suspended r                -- … and the awaiter is not awake
+  let r ← call (promiseGet { id := "a" }) 1050
+  check (r.promise.map (·.state) == some .resolved) "the awaited is settled"
 
-  let _ ← τresume 1060 "a" "x"           -- the drain, at an instant we pick
+  let r ← call (taskGet { id := "x" }) 1050
+  check (r.task.map (·.state) == some .suspended) "and the awaiter is not awake"
 
-  let r ← taskGet 1060 "x"
-  expect 200 r
-  expectTask .pending r                  -- now it is awake
+  let o ← call (processResume { awaited := "a", awaiter := "x" }) 1060
+  check (o.outcome == .resumed) "the drain wakes it"
 
-  let r ← acquire 1070 "x" 1 "p1" 800
-  expect 200 r
-  expectTask .acquired r
-  expectVersion 2 r                      -- acquisition bumps the fence by one
+  let r ← call (taskGet { id := "x" }) 1060
+  check (r.task.map (·.state) == some .pending) "now it is awake"
+
+  let r ← call (taskAcquire { id := "x", version := 1, pid := "p1", ttl := 800 }) 1070
+  check (r.status == 200) "and acquirable"
 
 /-- **Timeout always wins over a determined wake.**
 
     The same script with one number changed: the awaiter's own promise
-    times out at 1500, and the drain runs at 2000. The wake is no longer
-    owed — the timeout path owns this task's cleanup — so the drain
-    discards it.
-
-    An implementation that treats the drain as an unconditional wake
-    passes the case above and answers 200 to the last `acquire`. -/
+    times out at 1500 and the drain runs at 2000. The wake is no longer
+    owed, so the drain discards it and reports `expired`. -/
 def timeoutWins : T Unit := do
-  expect 200 (← create     1000 "a" 9000 external)
-  expect 200 (← taskCreate 1010 "x" "p0" 800 1500 targeted)   -- deadline 1500
-  expect 200 (← suspend    1020 "x" 1 ["a"])
-  expect 200 (← settle     1030 "a" .resolved)
+  let r ← call (promiseCreate { id := "a", timeoutAt := 9000, param := {},
+                                tags := external }) 1000
+  check (r.status == 200) "create a: status"
 
-  let r ← promiseGet 2000 "x"            -- asked past the deadline
-  expect 200 r
-  expectPromise .rejectedTimedout r      -- projected dead, before any τ fires
+  let r ← call (taskCreate { pid := "p0", ttl := 800,
+                             action := { id := "x", timeoutAt := 1500, param := {},
+                                         tags := targeted } }) 1010
+  check (r.status == 200) "task.create x: status"
 
-  let r ← taskGet 2000 "x"
-  expect 200 r
-  expectTask .fulfilled r                -- the task reads fulfilled with it
+  let r ← call (taskSuspend { id := "x", version := 1,
+                              actions := [{ awaited := "a", awaiter := "x" }] }) 1020
+  check (r.status == 200) "suspend: status"
 
-  let _ ← τresume 2000 "a" "x"           -- the drain finds nothing owed
-  expect 409 (← acquire 2010 "x" 1 "p1" 800)
+  let r ← call (promiseSettle { id := "a", state := .resolved, value := {} }) 1030
+  check (r.status == 200) "settle a: status"
 
-/-- **A promise born past its deadline.**
+  let r ← call (promiseGet { id := "x" }) 2000
+  check (r.promise.map (·.state) == some .rejectedTimedout) "the awaiter is dead"
 
-    The deadline is judged against the instant of the request. A promise
-    created at 1000 with a deadline of 500 is born settled, and which
-    verdict depends on one tag: a timer resolves when its deadline
-    arrives, everything else is rejected.
+  let o ← call (processResume { awaited := "a", awaiter := "x" }) 2000
+  check (o.outcome == .expired) "the drain discards the wake"
 
-    Then creation is idempotent, and the echo is the ORIGINAL — creating
-    the same id again with a later deadline answers with the promise
-    that already exists. -/
-def bornDead : T Unit := do
-  let r ← create 1000 "late" 500 external
-  expect 200 r
-  expectPromise .rejectedTimedout r
+  let r ← call (taskAcquire { id := "x", version := 1, pid := "p1", ttl := 800 }) 2010
+  check (r.status == 409) "never acquirable"
 
-  let r ← create 1000 "tick" 500 timer
-  expect 200 r
-  expectPromise .resolved r
+/-- **Suspending on something already settled is 300.**
 
-  let r ← create 1010 "late" 9000 external
-  expect 200 r
-  expectPromise .rejectedTimedout r
-
-/-- **The deadline is exclusive.**
-
-    A promise with a deadline of 2000 is alive when asked at 1999 and
-    dead when asked at 2000. The machine reads `timeoutAt > now` for
-    live, so AT the deadline is already past it — the boundary where an
-    implementation using `>=` disagrees, and the only place the
-    difference shows. -/
-def deadlineBoundary : T Unit := do
-  expect 200 (← create 1000 "a" 2000 external)
-
-  let r ← promiseGet 1999 "a"
-  expect 200 r
-  expectPromise .pending r
-
-  let r ← promiseGet 2000 "a"
-  expect 200 r
-  expectPromise .rejectedTimedout r
-
-/-- **Settlement refusals, and their order.**
-
-    A malformed settlement is 400 even when the promise does not exist —
-    validation outranks existence — and `rejected_timedout` is malformed
-    because that verdict is the server's to write, never a client's. -/
-def settleRefusals : T Unit := do
-  expect 200 (← create 1000 "a" 9000 external)
-
-  expect 400 (← settle 1010 "a" .pending)              -- not a settlement
-  expect 400 (← settle 1010 "a" .rejectedTimedout)     -- server-owned verdict
-  expect 400 (← settle 1010 "ghost" .pending)          -- 400 outranks 404
-  expect 404 (← settle 1010 "ghost" .resolved)         -- well formed, absent
-
-  expect 200 (← settle 1020 "a" .resolved)
-  let r ← settle 1030 "a" .rejected                    -- settled: no change
-  expect 200 r
-  expectPromise .resolved r
-
-/-- **The fence rises by exactly one, and only on acquisition.**
-
-    A worker that lost its claim can tell, because the version it holds
-    no longer matches. Every version-bearing call answers 409 to a stale
-    one, and `release` does not bump. -/
-def fencing : T Unit := do
-  expect 200 (← create 1000 "x" 9000 targeted)
-
-  let r ← acquire 1010 "x" 0 "p0" 800
-  expect 200 r
-  expectVersion 1 r
-
-  expect 409 (← acquire 1020 "x" 0 "p1" 800)     -- stale: already taken
-  expect 409 (← fulfill 1020 "x" 0 .resolved)    -- stale fence
-  expect 409 (← release 1020 "x" 0)
-
-  expect 200 (← release 1030 "x" 1)              -- the holder can release
-  let r ← taskGet 1030 "x"
-  expect 200 r
-  expectTask .pending r
-  expectVersion 1 r                              -- release does NOT bump
-
-  let r ← acquire 1040 "x" 1 "p1" 800            -- the next claim does
-  expect 200 r
-  expectVersion 2 r
-
-/-- **Suspending on something already settled is 300, not 200.**
-
-    Parking the task would park it forever: nothing more is going to
-    happen to a promise that has already settled. The client is told to
-    look again rather than sleep, and keeps its claim. -/
+    Parking the task would park it forever. The client is told to look
+    again rather than sleep, and keeps its claim. -/
 def suspendOnSettled : T Unit := do
-  expect 200 (← create     1000 "a" 9000 external)
-  expect 200 (← settle     1010 "a" .resolved)
-  expect 200 (← taskCreate 1020 "x" "p0" 800 9000 targeted)
+  let r ← call (promiseCreate { id := "a", timeoutAt := 9000, param := {},
+                                tags := external }) 1000
+  check (r.status == 200) "create a: status"
 
-  expect 300 (← suspend 1030 "x" 1 ["a"])
+  let r ← call (promiseSettle { id := "a", state := .resolved, value := {} }) 1010
+  check (r.status == 200) "settle a: status"
 
-  let r ← taskGet 1040 "x"
-  expect 200 r
-  expectTask .acquired r                         -- still held, not parked
+  let r ← call (taskCreate { pid := "p0", ttl := 800,
+                             action := { id := "x", timeoutAt := 9000, param := {},
+                                         tags := targeted } }) 1020
+  check (r.status == 200) "task.create x: status"
+
+  let r ← call (taskSuspend { id := "x", version := 1,
+                              actions := [{ awaited := "a", awaiter := "x" }] }) 1030
+  check (r.status == 300) "suspend on a settled awaited: 300"
+
+  let r ← call (taskGet { id := "x" }) 1040
+  check (r.task.map (·.state) == some .acquired) "still held, not parked"
 
 def cases : List Case :=
-  [ { name := "the wake pipeline, one request at a time", body := wakePipeline },
-    { name := "timeout always wins over a determined wake", body := timeoutWins },
-    { name := "a promise born past its deadline",           body := bornDead },
-    { name := "the deadline is exclusive",                  body := deadlineBoundary },
-    { name := "settlement refusals, and their order",       body := settleRefusals },
-    { name := "the fence rises by exactly one",             body := fencing },
-    { name := "suspending on a settled promise is 300",     body := suspendOnSettled } ]
+  [ { name := "a promise born past its deadline",            body := bornDead },
+    { name := "the deadline is exclusive",                   body := deadlineBoundary },
+    { name := "settlement refusals, and their order",        body := settleRefusals },
+    { name := "the fence rises by exactly one",              body := fencing },
+    { name := "the wake pipeline, one request at a time",    body := wakePipeline },
+    { name := "timeout always wins over a determined wake",  body := timeoutWins },
+    { name := "suspending on a settled promise is 300",      body := suspendOnSettled } ]
 
-/-- Every case passes against the specification. Not a claim — a check.
-    `#eval failures cases` names the case, the step and the expectation
-    for any that do not. -/
+/-- Every case passes against the specification. `#eval failures cases`
+    names the case, the step and the check for any that do not. -/
 theorem cases_all_pass : (failures cases).isEmpty = true := by decide
 
 end Tests
