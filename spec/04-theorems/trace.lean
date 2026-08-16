@@ -258,7 +258,7 @@ def sent (pre post : ServerState) : List OutboxEntry :=
     externalizes for it, the messages it sent doing so, and the instant
     on the wall clock.
 
-    `msgs` is the second output channel. A response goes back to the
+    `msg` is the second output channel. A response goes back to the
     client that asked; a message goes to a worker or a listener that did
     not ask, and the two are not the same observation. Keeping messages
     only in the state meant they could be compared solely at quiescence,
@@ -269,7 +269,7 @@ structure StateAction where
   state : ServerState
   req   : Request
   res   : Response
-  msgs  : List OutboxEntry
+  msg   : List OutboxEntry
   now   : Nat
 
 /-- A trace is an infinite sequence of state-action pairs. -/
@@ -283,7 +283,7 @@ def Valid (handle : Request → Nat → H Response) (tr : Trace) : Prop :=
   ∀ t : Nat,
     (tr t).res = (stepOf handle (tr t).req (tr t).now (tr t).state).1 ∧
     (tr (t + 1)).state = (stepOf handle (tr t).req (tr t).now (tr t).state).2 ∧
-    (tr t).msgs =
+    (tr t).msg =
       sent (tr t).state (stepOf handle (tr t).req (tr t).now (tr t).state).2 ∧
     (tr t).now ≤ (tr (t + 1)).now
 
