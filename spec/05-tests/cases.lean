@@ -2,9 +2,9 @@ import «05-tests».«framework»
 
 /-!  # Test cases
 
-Every case is a sequence of ordinary requests, and every assertion is on
-what a request answered. Nothing reads the server's state, because an
-implementer porting these has a client and a server and nothing else.
+Every case is a sequence of ordinary requests, each carrying the instant
+it happens at, and every assertion is on what a request answered.
+Nothing reads the server's state.
 
 Each case runs against the specification, and `cases_all_pass` at the
 bottom is checked by `decide`. -/
@@ -21,51 +21,43 @@ def timer    : Tags := [("resonate:timer", "true"), ("resonate:external", "true"
 
     A task suspends on a promise, the promise settles, and the task is
     NOT awake yet. It wakes when the drain runs, which is a separate
-    internal step at a moment this case picks.
+    internal step at an instant this case picks.
 
     The two reads in the middle are the point, and both are answers to
-    ordinary `get` calls. `promise.get` already says resolved;
-    `task.get` still says suspended. Both are correct, and an
+    ordinary `get` calls at the same instant. `promise.get` says
+    resolved; `task.get` says suspended. Both are correct, and an
     implementation that wakes the task inside `promise.settle` gives a
-    different answer to the second one. -/
+    different answer to the second. -/
 def wakePipeline : T Unit := do
-  clock 1000
-  expect 200 (← create "a" 9000 external)
-  clock 1010
-  expect 200 (← taskCreate "x" "p0" 800 9000 targeted)
-  clock 1020
-  expect 200 (← suspend "x" 1 ["a"])
+  expect 200 (← create     1000 "a" 9000 external)
+  expect 200 (← taskCreate 1010 "x" "p0" 800 9000 targeted)
+  expect 200 (← suspend    1020 "x" 1 ["a"])
 
-  clock 1030
-  let r ← taskGet "x"
+  let r ← taskGet 1030 "x"
   expect 200 r
   expectTask .suspended r
 
-  clock 1040
-  expect 200 (← settle "a" .resolved)
-  sentNothing                        -- settling dispatches nothing
+  expect 200 (← settle 1040 "a" .resolved)
+  sentNothing                            -- settling dispatches nothing
 
-  clock 1050
-  let r ← get "a"
+  let r ← promiseGet 1050 "a"
   expect 200 r
-  expectPromise .resolved r          -- the awaited is settled …
+  expectPromise .resolved r              -- the awaited is settled …
 
-  let r ← taskGet "x"
+  let r ← taskGet 1050 "x"
   expect 200 r
-  expectTask .suspended r            -- … and the awaiter is not awake yet
+  expectTask .suspended r                -- … and the awaiter is not awake
 
-  clock 1060
-  let _ ← τresume "a" "x"            -- the drain, at a moment we choose
+  let _ ← τresume 1060 "a" "x"           -- the drain, at an instant we pick
 
-  let r ← taskGet "x"
+  let r ← taskGet 1060 "x"
   expect 200 r
-  expectTask .pending r              -- now it is awake
+  expectTask .pending r                  -- now it is awake
 
-  clock 1070
-  let r ← acquire "x" 1 "p1" 800
+  let r ← acquire 1070 "x" 1 "p1" 800
   expect 200 r
   expectTask .acquired r
-  expectVersion 2 r                  -- acquisition bumps the fence by one
+  expectVersion 2 r                      -- acquisition bumps the fence by one
 
 /-- **Timeout always wins over a determined wake.**
 
@@ -74,72 +66,81 @@ def wakePipeline : T Unit := do
     owed — the timeout path owns this task's cleanup — so the drain
     discards it.
 
-    Everything asserted here is an answer to a normal request. An
-    implementation that treats the drain as an unconditional wake passes
-    the case above and answers 200 to the last `acquire` here. -/
+    An implementation that treats the drain as an unconditional wake
+    passes the case above and answers 200 to the last `acquire`. -/
 def timeoutWins : T Unit := do
-  clock 1000
-  expect 200 (← create "a" 9000 external)
-  clock 1010
-  expect 200 (← taskCreate "x" "p0" 800 1500 targeted)    -- own deadline 1500
-  clock 1020
-  expect 200 (← suspend "x" 1 ["a"])
-  clock 1030
-  expect 200 (← settle "a" .resolved)
+  expect 200 (← create     1000 "a" 9000 external)
+  expect 200 (← taskCreate 1010 "x" "p0" 800 1500 targeted)   -- deadline 1500
+  expect 200 (← suspend    1020 "x" 1 ["a"])
+  expect 200 (← settle     1030 "a" .resolved)
 
-  clock 2000                                              -- past 1500
-  let r ← get "x"
+  let r ← promiseGet 2000 "x"            -- asked past the deadline
   expect 200 r
-  expectPromise .rejectedTimedout r     -- projected dead before any τ fires
+  expectPromise .rejectedTimedout r      -- projected dead, before any τ fires
 
-  let r ← taskGet "x"
+  let r ← taskGet 2000 "x"
   expect 200 r
-  expectTask .fulfilled r               -- and the task reads fulfilled with it
+  expectTask .fulfilled r                -- the task reads fulfilled with it
 
-  let _ ← τresume "a" "x"               -- the drain finds nothing owed
-  expect 409 (← acquire "x" 1 "p1" 800)
+  let _ ← τresume 2000 "a" "x"           -- the drain finds nothing owed
+  expect 409 (← acquire 2010 "x" 1 "p1" 800)
 
 /-- **A promise born past its deadline.**
 
-    Creation is not exempt from the deadline: a promise created with a
-    timeout already in the past comes back settled from the create call
-    itself. Which verdict depends on one tag — a timer resolves when its
-    deadline arrives, everything else is rejected.
+    The deadline is judged against the instant of the request. A promise
+    created at 1000 with a deadline of 500 is born settled, and which
+    verdict depends on one tag: a timer resolves when its deadline
+    arrives, everything else is rejected.
 
-    Then creation is idempotent, and the echo is the ORIGINAL: creating
+    Then creation is idempotent, and the echo is the ORIGINAL — creating
     the same id again with a later deadline answers with the promise
-    that already exists, not a new one. -/
+    that already exists. -/
 def bornDead : T Unit := do
-  clock 1000
-  let r ← create "late" 500 external
+  let r ← create 1000 "late" 500 external
   expect 200 r
   expectPromise .rejectedTimedout r
 
-  let r ← create "tick" 500 timer
+  let r ← create 1000 "tick" 500 timer
   expect 200 r
   expectPromise .resolved r
 
-  let r ← create "late" 9000 external
+  let r ← create 1010 "late" 9000 external
   expect 200 r
   expectPromise .rejectedTimedout r
 
-/-- **Settlement refusals.**
+/-- **The deadline is exclusive.**
 
-    Three ways to be refused, and their order matters. A malformed
-    settlement is 400 even when the promise does not exist — validation
-    outranks existence — and `rejected_timedout` is malformed because
-    that verdict is the server's to write, never a client's. -/
+    A promise with a deadline of 2000 is alive when asked at 1999 and
+    dead when asked at 2000. The machine reads `timeoutAt > now` for
+    live, so AT the deadline is already past it — the boundary where an
+    implementation using `>=` disagrees, and the only place the
+    difference shows. -/
+def deadlineBoundary : T Unit := do
+  expect 200 (← create 1000 "a" 2000 external)
+
+  let r ← promiseGet 1999 "a"
+  expect 200 r
+  expectPromise .pending r
+
+  let r ← promiseGet 2000 "a"
+  expect 200 r
+  expectPromise .rejectedTimedout r
+
+/-- **Settlement refusals, and their order.**
+
+    A malformed settlement is 400 even when the promise does not exist —
+    validation outranks existence — and `rejected_timedout` is malformed
+    because that verdict is the server's to write, never a client's. -/
 def settleRefusals : T Unit := do
-  clock 1000
-  expect 200 (← create "a" 9000 external)
+  expect 200 (← create 1000 "a" 9000 external)
 
-  expect 400 (← settle "a" .pending)             -- not a settlement
-  expect 400 (← settle "a" .rejectedTimedout)    -- server-owned verdict
-  expect 400 (← settle "ghost" .pending)         -- 400 outranks 404
-  expect 404 (← settle "ghost" .resolved)        -- well formed, absent
+  expect 400 (← settle 1010 "a" .pending)              -- not a settlement
+  expect 400 (← settle 1010 "a" .rejectedTimedout)     -- server-owned verdict
+  expect 400 (← settle 1010 "ghost" .pending)          -- 400 outranks 404
+  expect 404 (← settle 1010 "ghost" .resolved)         -- well formed, absent
 
-  expect 200 (← settle "a" .resolved)
-  let r ← settle "a" .rejected                   -- already settled: no change
+  expect 200 (← settle 1020 "a" .resolved)
+  let r ← settle 1030 "a" .rejected                    -- settled: no change
   expect 200 r
   expectPromise .resolved r
 
@@ -147,50 +148,41 @@ def settleRefusals : T Unit := do
 
     A worker that lost its claim can tell, because the version it holds
     no longer matches. Every version-bearing call answers 409 to a stale
-    one. -/
+    one, and `release` does not bump. -/
 def fencing : T Unit := do
-  clock 1000
-  expect 200 (← create "x" 9000 targeted)
+  expect 200 (← create 1000 "x" 9000 targeted)
 
-  clock 1010
-  let r ← acquire "x" 0 "p0" 800
+  let r ← acquire 1010 "x" 0 "p0" 800
   expect 200 r
   expectVersion 1 r
 
-  clock 1020
-  expect 409 (← acquire "x" 0 "p1" 800)          -- stale: already taken
-  expect 409 (← fulfill "x" 0 .resolved)         -- stale fence
-  expect 409 (← release "x" 0)
+  expect 409 (← acquire 1020 "x" 0 "p1" 800)     -- stale: already taken
+  expect 409 (← fulfill 1020 "x" 0 .resolved)    -- stale fence
+  expect 409 (← release 1020 "x" 0)
 
-  clock 1030
-  expect 200 (← release "x" 1)                   -- the holder can release
-  let r ← taskGet "x"
+  expect 200 (← release 1030 "x" 1)              -- the holder can release
+  let r ← taskGet 1030 "x"
   expect 200 r
   expectTask .pending r
   expectVersion 1 r                              -- release does NOT bump
 
-  clock 1040
-  let r ← acquire "x" 1 "p1" 800                 -- the next claim does
+  let r ← acquire 1040 "x" 1 "p1" 800            -- the next claim does
   expect 200 r
   expectVersion 2 r
 
 /-- **Suspending on something already settled is 300, not 200.**
 
-    The task is not parked, because parking it would park it forever:
-    nothing more is going to happen to a promise that has already
-    settled. The client is told to look again rather than sleep. -/
+    Parking the task would park it forever: nothing more is going to
+    happen to a promise that has already settled. The client is told to
+    look again rather than sleep, and keeps its claim. -/
 def suspendOnSettled : T Unit := do
-  clock 1000
-  expect 200 (← create "a" 9000 external)
-  clock 1010
-  expect 200 (← settle "a" .resolved)
-  clock 1020
-  expect 200 (← taskCreate "x" "p0" 800 9000 targeted)
+  expect 200 (← create     1000 "a" 9000 external)
+  expect 200 (← settle     1010 "a" .resolved)
+  expect 200 (← taskCreate 1020 "x" "p0" 800 9000 targeted)
 
-  clock 1030
-  expect 300 (← suspend "x" 1 ["a"])
+  expect 300 (← suspend 1030 "x" 1 ["a"])
 
-  let r ← taskGet "x"
+  let r ← taskGet 1040 "x"
   expect 200 r
   expectTask .acquired r                         -- still held, not parked
 
@@ -198,6 +190,7 @@ def cases : List Case :=
   [ { name := "the wake pipeline, one request at a time", body := wakePipeline },
     { name := "timeout always wins over a determined wake", body := timeoutWins },
     { name := "a promise born past its deadline",           body := bornDead },
+    { name := "the deadline is exclusive",                  body := deadlineBoundary },
     { name := "settlement refusals, and their order",       body := settleRefusals },
     { name := "the fence rises by exactly one",             body := fencing },
     { name := "suspending on a settled promise is 300",     body := suspendOnSettled } ]

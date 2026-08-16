@@ -7,9 +7,10 @@ something else: a list of concrete things to do and concrete things
 that must then be true, short enough to read and mechanical enough to
 transliterate into whatever language the implementation is in.
 
-That is what this is. A test case here is a `do` block — a clock, a
-sequence of external requests and internal steps, and assertions
-between them — and it reads as pseudocode on purpose. Porting one is
+That is what this is. A test case here is a `do` block — a sequence of
+external requests and internal steps, each carrying the instant it
+happens at, with assertions between them — and it reads as pseudocode on
+purpose. Porting one is
 transliteration, not interpretation.
 
 What makes it more than pseudocode: every case RUNS, against the
@@ -20,8 +21,8 @@ specification satisfies them".
 
 ## The monad
 
-`StateT Ctx (Except Failure)`: state threads the machine and the clock,
-`Except` short-circuits at the first failed assertion. The step index
+`StateT Ctx (Except Failure)`: state threads the machine, `Except`
+short-circuits at the first failed assertion. The step index
 rides along so a failure says WHERE — `step 4: expected 409, got 200` —
 which is the difference between a test you can act on and one you have
 to bisect.
@@ -56,42 +57,35 @@ structure Failure where
   what : String
   deriving Repr
 
-/-- The machine, the clock, how many steps have run, and the messages
-    the LAST step sent — `StateAction.msg`, per step rather than
-    accumulated, so a case can assert that a step dispatched something
-    at the moment it did. -/
+/-- The machine, how many steps have run, and the messages the LAST step
+    sent — `StateAction.msg`, per step rather than accumulated, so a case
+    can assert that a step dispatched something at the moment it did.
+
+    No clock here. Every handler is `Req → (now : Nat) → M Res`: the
+    instant is an ARGUMENT of the request, not ambient state the server
+    keeps. So each call in a case carries its own `now`, which is also
+    what an implementer sends. -/
 structure Ctx where
   state : ConcreteModel.ServerState
-  now   : Nat
   idx   : Nat
   msg   : List OutboxEntry
 
 abbrev T := StateT Ctx (Except Failure)
 
 def init : Ctx :=
-  { state := ConcreteModel.ServerState.init, now := 0, idx := 0, msg := [] }
+  { state := ConcreteModel.ServerState.init, idx := 0, msg := [] }
 
 def fail (what : String) : T Unit := do
-  let c ← get
+  let c ← StateT.get
   throw { step := c.idx, what := what }
-
-/-- Set the clock. Time only moves where a case says it does; there is
-    no hidden clock in the machine either (`now` is a handler argument),
-    so a case controls it completely. -/
-def clock (n : Nat) : T Unit :=
-  modify fun c => { c with now := n }
-
-/-- Advance the clock by `d`. -/
-def wait (d : Nat) : T Unit :=
-  modify fun c => { c with now := c.now + d }
 
 /-- Run one step of the machine — external request or internal step,
     the alphabet does not distinguish them — and record what it sent. -/
-def act (rq : Request) : T Response := do
-  let c ← get
-  let (res, s') := stepOf handleP rq c.now c.state
+def act (now : Nat) (rq : Request) : T Response := do
+  let c ← StateT.get
+  let (res, s') := stepOf handleP rq now c.state
   let sent := s'.outbox.filter (fun e => !c.state.outbox.contains e)
-  set { state := s', now := c.now, idx := c.idx + 1, msg := sent }
+  set { state := s', idx := c.idx + 1, msg := sent }
   return res
 
 /-! ### The status of a response
@@ -128,48 +122,48 @@ def status : Response → Nat
 Thin constructors so a case reads as the call an implementer would
 make, not as an inductive.  -/
 
-def create (id : String) (timeoutAt : Nat) (tags : Tags) : T Response :=
-  act (.promiseCreate { id := id, timeoutAt := timeoutAt, param := {}, tags := tags })
+def create (now : Nat) (id : String) (timeoutAt : Nat) (tags : Tags) : T Response :=
+  act now (.promiseCreate { id := id, timeoutAt := timeoutAt, param := {}, tags := tags })
 
-def get (id : String) : T Response :=
-  act (.promiseGet { id := id })
+def promiseGet (now : Nat) (id : String) : T Response :=
+  act now (.promiseGet { id := id })
 
-def settle (id : String) (st : PromiseState) : T Response :=
-  act (.promiseSettle { id := id, state := st, value := {} })
+def settle (now : Nat) (id : String) (st : PromiseState) : T Response :=
+  act now (.promiseSettle { id := id, state := st, value := {} })
 
-def callback (awaited awaiter : String) : T Response :=
-  act (.promiseRegisterCallback { awaited := awaited, awaiter := awaiter })
+def callback (now : Nat) (awaited awaiter : String) : T Response :=
+  act now (.promiseRegisterCallback { awaited := awaited, awaiter := awaiter })
 
-def listen (awaited address : String) : T Response :=
-  act (.promiseRegisterListener { awaited := awaited, address := address })
+def listen (now : Nat) (awaited address : String) : T Response :=
+  act now (.promiseRegisterListener { awaited := awaited, address := address })
 
-def taskCreate (id pid : String) (ttl timeoutAt : Nat) (tags : Tags) : T Response :=
-  act (.taskCreate { pid := pid, ttl := ttl,
+def taskCreate (now : Nat) (id pid : String) (ttl timeoutAt : Nat) (tags : Tags) : T Response :=
+  act now (.taskCreate { pid := pid, ttl := ttl,
                      action := { id := id, timeoutAt := timeoutAt, param := {}, tags := tags } })
 
-def taskGet (id : String) : T Response :=
-  act (.taskGet { id := id })
+def taskGet (now : Nat) (id : String) : T Response :=
+  act now (.taskGet { id := id })
 
-def acquire (id : String) (version : Nat) (pid : String) (ttl : Nat) : T Response :=
-  act (.taskAcquire { id := id, version := version, pid := pid, ttl := ttl })
+def acquire (now : Nat) (id : String) (version : Nat) (pid : String) (ttl : Nat) : T Response :=
+  act now (.taskAcquire { id := id, version := version, pid := pid, ttl := ttl })
 
-def suspend (id : String) (version : Nat) (awaited : List String) : T Response :=
-  act (.taskSuspend { id := id, version := version,
+def suspend (now : Nat) (id : String) (version : Nat) (awaited : List String) : T Response :=
+  act now (.taskSuspend { id := id, version := version,
                       actions := awaited.map (fun a => { awaited := a, awaiter := id }) })
 
-def fulfill (id : String) (version : Nat) (st : PromiseState) : T Response :=
-  act (.taskFulfill { id := id, version := version,
+def fulfill (now : Nat) (id : String) (version : Nat) (st : PromiseState) : T Response :=
+  act now (.taskFulfill { id := id, version := version,
                       action := { id := id, state := st, value := {} } })
 
-def release (id : String) (version : Nat) : T Response :=
-  act (.taskRelease { id := id, version := version })
+def release (now : Nat) (id : String) (version : Nat) : T Response :=
+  act now (.taskRelease { id := id, version := version })
 
-def halt (id : String) : T Response := act (.taskHalt { id := id })
+def halt (now : Nat) (id : String) : T Response := act now (.taskHalt { id := id })
 
-def «continue» (id : String) : T Response := act (.taskContinue { id := id })
+def «continue» (now : Nat) (id : String) : T Response := act now (.taskContinue { id := id })
 
-def heartbeat (pid : String) (refs : List (String × Nat)) : T Response :=
-  act (.taskHeartbeat { pid := pid,
+def heartbeat (now : Nat) (pid : String) (refs : List (String × Nat)) : T Response :=
+  act now (.taskHeartbeat { pid := pid,
                         tasks := refs.map (fun r => { id := r.1, version := r.2 }) })
 
 /-! ### Internal steps
@@ -180,11 +174,11 @@ moment is the point — an implementation that fires its timeouts a
 little late is not the same machine, and only a case that drives them
 can say so. -/
 
-def τpromiseTimeout (id : String) : T Response := act (.τPromiseTimeout id)
-def τtaskRetry     (id : String) : T Response := act (.τTaskRetryTimeout id)
-def τtaskLease     (id : String) : T Response := act (.τTaskLeaseTimeout id)
-def τresume (awaited awaiter : String) : T Response :=
-  act (.τResume { awaited := awaited, awaiter := awaiter })
+def τpromiseTimeout (now : Nat) (id : String) : T Response := act now (.τPromiseTimeout id)
+def τtaskRetry (now : Nat) (id : String) : T Response := act now (.τTaskRetryTimeout id)
+def τtaskLease (now : Nat) (id : String) : T Response := act now (.τTaskLeaseTimeout id)
+def τresume (now : Nat) (awaited awaiter : String) : T Response :=
+  act now (.τResume { awaited := awaited, awaiter := awaiter })
 
 /-! ### Assertions
 
@@ -252,7 +246,7 @@ def expectVersion (v : Nat) (res : Response) : T Unit :=
     asserting — a machine that dispatches where the specification does
     not is wrong in a way no response reveals. -/
 def sent (ms : List OutboxEntry) : T Unit := do
-  let c ← get
+  let c ← StateT.get
   let same := ms.all c.msg.contains && c.msg.all ms.contains
   if same then pure () else
     fail s!"messages: expected {repr ms}, got {repr c.msg}"
