@@ -238,25 +238,53 @@ def stepOf (handle : Request → Nat → H Response)
     (rq : Request) (now : Nat) (s : ServerState) : Response × ServerState :=
   Id.run ((handle rq now).run s)
 
+/-- The messages a step SENT: the `setMessage` effects it performed,
+    recovered as the outbox delta.
+
+    The delta is exact because the outbox only ever grows —
+    `monotone_outbox_keys_never_disappear` — so anything present after
+    and absent before was written by this step. It is exact with ONE
+    exception, and the exception is the outbox's own: `setMessage`
+    collapses on `OutboxEntry.key`, so a step that re-sends a byte-identical
+    entry to a key that already holds it produces no delta and this
+    reports no message. A worker receiving that dispatch twice would
+    disagree. The right fix is a `List Effect` on the step rather than a
+    diff — the abstract machine already has one — and this stays a diff
+    only because the outbox stays as it is. -/
+def sent (pre post : ServerState) : List OutboxEntry :=
+  post.outbox.filter (fun e => !pre.outbox.contains e)
+
 /-- A state, the request that hits it there, the response the machine
-    externalizes for it, and the instant on the wall clock. -/
+    externalizes for it, the messages it sent doing so, and the instant
+    on the wall clock.
+
+    `msgs` is the second output channel. A response goes back to the
+    client that asked; a message goes to a worker or a listener that did
+    not ask, and the two are not the same observation. Keeping messages
+    only in the state meant they could be compared solely at quiescence,
+    and made an internal step look silent — `processRetryTimeout` emits
+    an `execute` and `processListener` an `unblock`, so a τ is silent on
+    the response channel and never was on this one. -/
 structure StateAction where
   state : ServerState
   req   : Request
   res   : Response
+  msgs  : List OutboxEntry
   now   : Nat
 
 /-- A trace is an infinite sequence of state-action pairs. -/
 abbrev Trace := Nat → StateAction
 
 /-- **Validity**, parameterized by the machine: two subsequent pairs
-    are connected by a step — the recorded response and the successor's
-    state are exactly the handler's output — and the clock never runs
-    backwards. -/
+    are connected by a step — the recorded response, the messages sent,
+    and the successor's state are exactly the handler's output — and the
+    clock never runs backwards. -/
 def Valid (handle : Request → Nat → H Response) (tr : Trace) : Prop :=
   ∀ t : Nat,
     (tr t).res = (stepOf handle (tr t).req (tr t).now (tr t).state).1 ∧
     (tr (t + 1)).state = (stepOf handle (tr t).req (tr t).now (tr t).state).2 ∧
+    (tr t).msgs =
+      sent (tr t).state (stepOf handle (tr t).req (tr t).now (tr t).state).2 ∧
     (tr t).now ≤ (tr (t + 1)).now
 
 def ValidP : Trace → Prop := Valid handleP
