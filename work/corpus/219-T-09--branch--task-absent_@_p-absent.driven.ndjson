@@ -1,1 +1,1 @@
-{"kind":"task.halt","now":1080,"req":{"id":"o.ghost"},"res":{"kind":"task.halt","head":{"status":404},"data":{}}}
+{"kind":"task.halt","now":1080,"req":{"id":"o.ghost"},"res":{"kind":"task.halt","head":{"status":404},"data":{}},"msg":[]}

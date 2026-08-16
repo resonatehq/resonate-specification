@@ -9,6 +9,5 @@
   "from": "template: halt a fulfilled task",
   "steps": 3,
   "taus": 0,
-  "expectedOutbox": [],
   "tier": "both"
 }

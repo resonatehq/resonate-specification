@@ -10,6 +10,5 @@
   "from": "template: the promise timeout τ, and firing it twice",
   "steps": 1,
   "taus": 2,
-  "expectedOutbox": [],
   "tier": "both"
 }

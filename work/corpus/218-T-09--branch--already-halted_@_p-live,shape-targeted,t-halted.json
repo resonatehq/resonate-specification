@@ -9,6 +9,5 @@
   "from": "template: release and halt and continue",
   "steps": 3,
   "taus": 0,
-  "expectedOutbox": [],
   "tier": "both"
 }

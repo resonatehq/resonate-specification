@@ -1,2 +1,2 @@
-{"kind":"promise.create","now":1010,"req":{"id":"o.i","timeoutAt":5000,"param":{},"tags":{"resonate:origin":"o"}},"res":{"kind":"promise.create","head":{"status":200},"data":{"promise":{"id":"o.i","state":"pending","param":{},"value":{},"tags":{"resonate:origin":"o"},"timeoutAt":5000,"createdAt":1010}}}}
-{"kind":"promise.register_listener","now":1050,"req":{"awaited":"o.i","address":"https://l"},"res":{"kind":"promise.register_listener","head":{"status":422},"data":{}}}
+{"kind":"promise.create","now":1010,"req":{"id":"o.i","timeoutAt":5000,"param":{},"tags":{"resonate:origin":"o"}},"res":{"kind":"promise.create","head":{"status":200},"data":{"promise":{"id":"o.i","state":"pending","param":{},"value":{},"tags":{"resonate:origin":"o"},"timeoutAt":5000,"createdAt":1010}}},"msg":[]}
+{"kind":"promise.register_listener","now":1050,"req":{"awaited":"o.i","address":"https://l"},"res":{"kind":"promise.register_listener","head":{"status":422},"data":{}},"msg":[]}

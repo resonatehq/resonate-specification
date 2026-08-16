@@ -9,6 +9,5 @@
   "from": "template: a delayed first dispatch",
   "steps": 2,
   "taus": 0,
-  "expectedOutbox": [],
   "tier": "both"
 }

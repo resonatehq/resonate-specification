@@ -1,1 +1,1 @@
-{"kind":"promise.settle","now":1049,"req":{"id":"o.a0","state":"pending","value":{}},"res":{"kind":"promise.settle","head":{"status":400},"data":{}}}
+{"kind":"promise.settle","now":1049,"req":{"id":"o.a0","state":"pending","value":{}},"res":{"kind":"promise.settle","head":{"status":400},"data":{}},"msg":[]}

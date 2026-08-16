@@ -8,6 +8,5 @@
   "from": "template: task.create births and re-acquires",
   "steps": 2,
   "taus": 0,
-  "expectedOutbox": [],
   "tier": "both"
 }

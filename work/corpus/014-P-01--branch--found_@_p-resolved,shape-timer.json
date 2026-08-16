@@ -9,6 +9,5 @@
   "from": "template: timer born past its deadline resolves",
   "steps": 2,
   "taus": 0,
-  "expectedOutbox": [],
   "tier": "both"
 }

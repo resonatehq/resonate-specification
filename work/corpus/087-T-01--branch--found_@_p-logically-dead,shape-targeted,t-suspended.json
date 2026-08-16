@@ -12,6 +12,5 @@
   "from": "template: timeout always wins: the awaiter is dead at drain time",
   "steps": 4,
   "taus": 0,
-  "expectedOutbox": [],
   "tier": "both"
 }

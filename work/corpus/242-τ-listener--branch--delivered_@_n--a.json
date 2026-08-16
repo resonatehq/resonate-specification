@@ -11,8 +11,5 @@
   "from": "template: listeners",
   "steps": 3,
   "taus": 1,
-  "expectedOutbox": [
-    "unblock o.a -\u003e https://l"
-  ],
   "tier": "both"
 }

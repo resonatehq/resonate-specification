@@ -9,6 +9,5 @@
   "from": "template: τ no-ops: nothing is armed",
   "steps": 1,
   "taus": 1,
-  "expectedOutbox": [],
   "tier": "both"
 }

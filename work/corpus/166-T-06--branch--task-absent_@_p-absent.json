@@ -7,6 +7,5 @@
   "from": "template: suspend refusals",
   "steps": 1,
   "taus": 0,
-  "expectedOutbox": [],
   "tier": "both"
 }

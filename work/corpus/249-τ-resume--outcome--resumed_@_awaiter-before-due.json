@@ -14,6 +14,5 @@
   "from": "template: a suspended task whose awaited was registered by P-04",
   "steps": 6,
   "taus": 1,
-  "expectedOutbox": [],
   "tier": "both"
 }

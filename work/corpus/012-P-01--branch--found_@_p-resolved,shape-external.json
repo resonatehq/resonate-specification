@@ -10,6 +10,5 @@
   "from": "template: promise lifecycle, external",
   "steps": 3,
   "taus": 0,
-  "expectedOutbox": [],
   "tier": "both"
 }

@@ -11,6 +11,5 @@
   "from": "template: suspend on a settled awaited is 300",
   "steps": 4,
   "taus": 0,
-  "expectedOutbox": [],
   "tier": "both"
 }

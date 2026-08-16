@@ -11,6 +11,5 @@
   "from": "template: two workers race for one task",
   "steps": 4,
   "taus": 0,
-  "expectedOutbox": [],
   "tier": "both"
 }

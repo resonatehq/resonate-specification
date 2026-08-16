@@ -7,6 +7,5 @@
   "from": "search: seed 13",
   "steps": 1,
   "taus": 0,
-  "expectedOutbox": [],
   "tier": "both"
 }

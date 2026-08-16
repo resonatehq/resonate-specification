@@ -12,6 +12,5 @@
   "from": "template: a callback registered by promise.register_callback, drained",
   "steps": 4,
   "taus": 1,
-  "expectedOutbox": [],
   "tier": "both"
 }

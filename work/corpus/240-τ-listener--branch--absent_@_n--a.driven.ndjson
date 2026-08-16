@@ -1,1 +1,1 @@
-{"kind":"tau.listener","now":80092,"target":"o.a0","awaiter":"poll://any@w1","effect":"no-op"}
+{"kind":"tau.listener","now":80092,"target":"o.a0","awaiter":"poll://any@w1","effect":"no-op","msg":[]}

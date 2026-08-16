@@ -1,2 +1,2 @@
-{"kind":"promise.create","now":1000,"req":{"id":"o.a","timeoutAt":9000,"param":{},"tags":{"resonate:external":"true","resonate:origin":"o"}},"res":{"kind":"promise.create","head":{"status":200},"data":{"promise":{"id":"o.a","state":"pending","param":{},"value":{},"tags":{"resonate:external":"true","resonate:origin":"o"},"timeoutAt":9000,"createdAt":1000}}}}
-{"kind":"tau.promise_timeout","now":1010,"target":"o.a","effect":"no-op"}
+{"kind":"promise.create","now":1000,"req":{"id":"o.a","timeoutAt":9000,"param":{},"tags":{"resonate:external":"true","resonate:origin":"o"}},"res":{"kind":"promise.create","head":{"status":200},"data":{"promise":{"id":"o.a","state":"pending","param":{},"value":{},"tags":{"resonate:external":"true","resonate:origin":"o"},"timeoutAt":9000,"createdAt":1000}}},"msg":[]}
+{"kind":"tau.promise_timeout","now":1010,"target":"o.a","effect":"no-op","msg":[]}

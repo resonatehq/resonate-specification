@@ -684,7 +684,6 @@ type Case struct {
 	From    string   `json:"from"`
 	Steps   int      `json:"steps"`
 	Taus    int      `json:"taus"`
-	Outbox  []string `json:"expectedOutbox"`
 	// Tier is "both" when the case survives τ-erasure, "driven" when it does
 	// not. A case whose observational projection is EMPTY is not a defect:
 	// an internal step that fires with its obligation already discharged is
@@ -911,7 +910,6 @@ func BuildCorpus(d Discipline, seeds int) *Corpus {
 			From:    cd.from,
 			Steps:   len(ops),
 			Taus:    len(script) - len(ops),
-			Outbox:  outboxOf(d, script),
 			Tier:    tier,
 			script:  script,
 		})
@@ -937,39 +935,49 @@ var nameSanitizer = strings.NewReplacer("/", "--", ":", "-", " ", "_", ".", "_")
 
 func caseName(bucket string) string { return nameSanitizer.Replace(bucket) }
 
-// outboxOf reports the outbox as a KEYED set, because that is what it is:
-// `setMessage` collapses on the entry key, so multiplicity is not
-// observable and a harness must never assert a count.
-func outboxOf(d Discipline, script []step) []string {
-	out := []string{}
-	s := &ServerState{}
-	for _, st := range script {
-		if st.op != nil {
-			st.op.apply(s, d)
-			continue
+// `outboxOf` is gone with it. It reported the outbox as a keyed set at the
+// END of the run — what had accumulated, never when. The driven trace now
+// carries the messages on the step that sent them, which pins the moment as
+// well as the content: an implementation emitting the right execute at the
+// wrong step fails a case it used to pass.
+//
+// Nothing replaces it for the OBSERVATIONAL tier. That format is tee'd
+// request/response traffic and messages are deliveries to workers and
+// listeners, which never appear in it; that tier still needs an outbox
+// observer on the harness side.
+
+func sentDelta(pre, post []Message) []Message {
+	var out []Message
+	for _, m := range post {
+		found := false
+		for _, p := range pre {
+			if p == m {
+				found = true
+				break
+			}
 		}
-		switch st.internal {
-		case "R1":
-			s.ProcessPromiseTimeout(st.arg, st.now)
-		case "R3":
-			s.ProcessListener(st.arg, st.arg2, st.now)
-		case "R4":
-			s.ProcessCallback(st.arg, st.arg2, st.now)
-		case "R5":
-			s.ProcessLeaseTimeout(st.arg, st.now)
-		case "R6":
-			s.ProcessRetryTimeout(st.arg, st.now, st.now)
-		}
-	}
-	for _, m := range s.Outbox {
-		if m.Kind == "execute" {
-			out = append(out, fmt.Sprintf("execute %s v%d -> %s", m.TaskID, m.Version, m.Address))
-		} else {
-			out = append(out, fmt.Sprintf("unblock %s -> %s", m.Promise, m.Address))
+		if !found {
+			out = append(out, m)
 		}
 	}
-	sort.Strings(out)
 	return out
+}
+
+func emitMsgs(ms []Message) string {
+	if len(ms) == 0 {
+		return "[]"
+	}
+	var f []string
+	for _, m := range ms {
+		if m.Kind == "execute" {
+			f = append(f, fmt.Sprintf(`{"kind":"execute","taskId":%q,"version":%d,"address":%q}`,
+				m.TaskID, m.Version, m.Address))
+		} else {
+			f = append(f, fmt.Sprintf(`{"kind":"unblock","promise":%q,"address":%q}`,
+				m.Promise, m.Address))
+		}
+	}
+	return "[" + strings.Join(f, ",") + "]"
 }
 
 // ------------------------------------------------------------- emission
@@ -992,10 +1000,12 @@ func (c *Case) Driven(d Discipline) string {
 	var b strings.Builder
 	s := &ServerState{}
 	for _, st := range c.script {
+		pre := append([]Message(nil), s.Outbox...)
 		if st.op != nil {
 			res := st.op.apply(s, d)
-			fmt.Fprintf(&b, `{"kind":%q,"now":%d,"req":%s,"res":{"kind":%q,"head":{"status":%d},"data":%s}}`+"\n",
-				st.op.Kind, st.op.Now, emitReq(*st.op), st.op.Kind, res.Status, emitData(res))
+			fmt.Fprintf(&b, `{"kind":%q,"now":%d,"req":%s,"res":{"kind":%q,"head":{"status":%d},"data":%s},"msg":%s}`+"\n",
+				st.op.Kind, st.op.Now, emitReq(*st.op), st.op.Kind, res.Status, emitData(res),
+				emitMsgs(sentDelta(pre, s.Outbox)))
 			continue
 		}
 		name := map[string]string{
@@ -1023,8 +1033,8 @@ func (c *Case) Driven(d Discipline) string {
 		if st.arg2 != "" {
 			arg2 = fmt.Sprintf(`,"awaiter":%q`, st.arg2)
 		}
-		fmt.Fprintf(&b, `{"kind":%q,"now":%d,"target":%q%s,"effect":%q}`+"\n",
-			name, st.now, st.arg, arg2, effect)
+		fmt.Fprintf(&b, `{"kind":%q,"now":%d,"target":%q%s,"effect":%q,"msg":%s}`+"\n",
+			name, st.now, st.arg, arg2, effect, emitMsgs(sentDelta(pre, s.Outbox)))
 	}
 	return b.String()
 }

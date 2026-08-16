@@ -10,6 +10,5 @@
   "from": "search: seed 144",
   "steps": 3,
   "taus": 0,
-  "expectedOutbox": [],
   "tier": "both"
 }

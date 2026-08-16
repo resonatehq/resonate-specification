@@ -27,17 +27,29 @@ func TestEveryCaseWitnessesItsBucket(t *testing.T) {
 	}
 }
 
-// The observational file must be exactly the driven file with its τ rows
-// removed. If these two ever disagree, an implementor replaying the two
-// tiers is running two different tests and only one of them is the spec's.
+// The observational file must be the driven file with its τ rows removed
+// AND its `msg` fields dropped. If these two ever disagree, an implementor
+// replaying the two tiers is running two different tests and only one of
+// them is the spec's.
+//
+// Two projections, not one. Erasure in the specification's sense keeps a
+// step's messages — they are externally visible whether or not the step
+// that sent them was internal. The observational file drops them anyway,
+// because its format is tee'd request/response traffic and a delivery to a
+// worker never appears in it. That is a limit of the wire format, not of
+// the semantics, and this test pins the difference rather than hiding it.
 func TestObservationalIsTheTauErasureOfDriven(t *testing.T) {
 	c := BuildCorpus(Materialized, 40)
 	for _, cs := range c.Cases {
 		var erased []string
 		for _, line := range strings.Split(strings.TrimRight(cs.Driven(Materialized), "\n"), "\n") {
-			if line != "" && !strings.HasPrefix(line, `{"kind":"tau.`) {
-				erased = append(erased, line)
+			if line == "" || strings.HasPrefix(line, `{"kind":"tau.`) {
+				continue
 			}
+			if i := strings.Index(line, `,"msg":`); i >= 0 {
+				line = line[:i] + "}"
+			}
+			erased = append(erased, line)
 		}
 		want := strings.TrimRight(cs.Observational(Materialized), "\n")
 		got := strings.Join(erased, "\n")

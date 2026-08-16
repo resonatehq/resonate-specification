@@ -1,1 +1,1 @@
-{"kind":"task.get","now":1010,"req":{"id":"o.ghost"},"res":{"kind":"task.get","head":{"status":404},"data":{}}}
+{"kind":"task.get","now":1010,"req":{"id":"o.ghost"},"res":{"kind":"task.get","head":{"status":404},"data":{}},"msg":[]}

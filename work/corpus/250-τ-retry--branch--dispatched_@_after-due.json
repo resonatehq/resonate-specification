@@ -9,8 +9,5 @@
   "from": "template: retry re-dispatches a pending task",
   "steps": 1,
   "taus": 1,
-  "expectedOutbox": [
-    "execute o.x v0 -\u003e poll://any@w1"
-  ],
   "tier": "both"
 }

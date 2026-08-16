@@ -12,6 +12,5 @@
   "from": "template: timeout always wins: the awaited dies by deadline",
   "steps": 4,
   "taus": 0,
-  "expectedOutbox": [],
   "tier": "both"
 }

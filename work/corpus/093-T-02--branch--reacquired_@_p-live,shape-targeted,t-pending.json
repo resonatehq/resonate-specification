@@ -9,6 +9,5 @@
   "from": "template: task.create re-acquires a released task",
   "steps": 3,
   "taus": 0,
-  "expectedOutbox": [],
   "tier": "both"
 }

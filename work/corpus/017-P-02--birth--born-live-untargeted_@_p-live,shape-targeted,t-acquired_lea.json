@@ -10,6 +10,5 @@
   "from": "template: fencing",
   "steps": 2,
   "taus": 0,
-  "expectedOutbox": [],
   "tier": "both"
 }

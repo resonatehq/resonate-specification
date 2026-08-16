@@ -7,6 +7,5 @@
   "from": "template: τ no-ops: nothing is armed",
   "steps": 0,
   "taus": 1,
-  "expectedOutbox": [],
   "tier": "driven"
 }

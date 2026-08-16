@@ -12,6 +12,5 @@
   "from": "template: a P-04 callback drained onto an awaiter past its own deadline",
   "steps": 4,
   "taus": 1,
-  "expectedOutbox": [],
   "tier": "both"
 }

@@ -8,6 +8,5 @@
   "from": "template: lease expiry is a no-op while the lease holds",
   "steps": 1,
   "taus": 1,
-  "expectedOutbox": [],
   "tier": "both"
 }

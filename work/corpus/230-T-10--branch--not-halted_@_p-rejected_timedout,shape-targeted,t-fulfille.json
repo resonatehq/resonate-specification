@@ -9,6 +9,5 @@
   "from": "template: halt and continue on a dead promise",
   "steps": 3,
   "taus": 0,
-  "expectedOutbox": [],
   "tier": "both"
 }

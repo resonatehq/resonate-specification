@@ -7,6 +7,5 @@
   "from": "search: seed 2",
   "steps": 0,
   "taus": 1,
-  "expectedOutbox": [],
   "tier": "driven"
 }

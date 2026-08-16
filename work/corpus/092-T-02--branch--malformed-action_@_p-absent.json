@@ -7,6 +7,5 @@
   "from": "template: a timer is never targeted",
   "steps": 1,
   "taus": 0,
-  "expectedOutbox": [],
   "tier": "both"
 }

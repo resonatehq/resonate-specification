@@ -7,6 +7,5 @@
   "from": "template: listeners",
   "steps": 1,
   "taus": 0,
-  "expectedOutbox": [],
   "tier": "both"
 }
