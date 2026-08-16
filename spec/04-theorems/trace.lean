@@ -7,10 +7,10 @@ import «03-concrete».«internal-steps-m»
 
 The system as a trace, following `03stable/04-trace.lean`: a trace is
 an infinite sequence of state-action pairs — the state the machine is
-in, the request that hits it there, the response it externalizes, and
-the instant on the wall clock. A trace is VALID iff every two
-subsequent pairs are connected by a step and the clock never runs
-backwards. Both machines share one alphabet (`Request`/`Response` —
+in, the request that hits it there, the response it externalizes, the
+messages it sends doing so, and the instant on the wall clock. A trace
+is VALID iff every two subsequent pairs are connected by a step and the
+clock never runs backwards. Both machines share one alphabet (`Request`/`Response` —
 the wire types are common), one state type, and one validity
 definition, instantiated with each machine's step function: `ValidP`
 and `ValidM`.
@@ -100,7 +100,10 @@ inductive Request
   | idle
   deriving Repr
 
-/-- τ-steps and `idle` are silent: nobody outside is listening. The
+/-- τ-steps and `idle` are silent ON THIS CHANNEL: no client is waiting
+    on a response. They are not silent on `StateAction.msg` — a retry
+    dispatches an `execute` and a listener step an `unblock`, and a
+    worker is very much listening. The
     drain's oracle-facing `ResumeOutcome` rides along as `.resume`; it
     is internal all the same. -/
 inductive Response
