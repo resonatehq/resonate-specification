@@ -1,0 +1,12 @@
+{
+  "name": "T-01--branch--task-absent_@_p-absent",
+  "witness": "T-01/branch/task-absent @ p:absent",
+  "covers": [
+    "T-01/branch/task-absent @ p:absent"
+  ],
+  "from": "template: reads of what does not exist",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

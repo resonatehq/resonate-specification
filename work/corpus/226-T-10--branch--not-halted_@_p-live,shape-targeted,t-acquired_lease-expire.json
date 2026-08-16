@@ -1,0 +1,13 @@
+{
+  "name": "T-10--branch--not-halted_@_p-live,shape-targeted,t-acquired_lease-expired",
+  "witness": "T-10/branch/not-halted @ p:live,shape:targeted,t:acquired.lease-expired",
+  "covers": [
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-10/branch/not-halted @ p:live,shape:targeted,t:acquired.lease-expired"
+  ],
+  "from": "search: seed 22",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

@@ -1,0 +1,14 @@
+{
+  "name": "T-04--branch--task-wrong-state_@_p-live,shape-targeted,t-pending,version-current",
+  "witness": "T-04/branch/task-wrong-state @ p:live,shape:targeted,t:pending,version-current",
+  "covers": [
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-04/branch/task-wrong-state @ p:live,shape:targeted,t:pending,version-current",
+    "T-08/branch/released @ p:live,shape:targeted,t:acquired.lease-live,version-current"
+  ],
+  "from": "template: fencing",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

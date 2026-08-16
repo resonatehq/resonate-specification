@@ -1,0 +1,16 @@
+{
+  "name": "P-03--branch--unsettable_@_p-logically-dead,shape-external",
+  "witness": "P-03/branch/unsettable @ p:logically-dead,shape:external",
+  "covers": [
+    "P-02/birth/born-live-untargeted @ p:live,shape:targeted,t:acquired.lease-live,version-current",
+    "P-02/branch/created @ p:live,shape:targeted,t:acquired.lease-live,version-current",
+    "P-03/branch/unsettable @ p:logically-dead,shape:external",
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-04/branch/fenced-create @ p:live,shape:targeted,t:acquired.lease-live,version-current"
+  ],
+  "from": "search: seed 506",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

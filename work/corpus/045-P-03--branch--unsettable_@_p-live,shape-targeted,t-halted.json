@@ -1,0 +1,14 @@
+{
+  "name": "P-03--branch--unsettable_@_p-live,shape-targeted,t-halted",
+  "witness": "P-03/branch/unsettable @ p:live,shape:targeted,t:halted",
+  "covers": [
+    "P-03/branch/unsettable @ p:live,shape:targeted,t:halted",
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-09/branch/halted @ p:live,shape:targeted,t:acquired.lease-expired"
+  ],
+  "from": "search: seed 145",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

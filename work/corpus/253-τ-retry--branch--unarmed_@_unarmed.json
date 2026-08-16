@@ -1,0 +1,15 @@
+{
+  "name": "τ-retry--branch--unarmed_@_unarmed",
+  "witness": "τ-retry/branch/unarmed @ unarmed",
+  "covers": [
+    "P-02/birth/born-dead-rejected-timedout @ p:absent",
+    "P-02/birth/born-dead-targeted-task-fulfilled @ p:absent",
+    "P-02/branch/created @ p:absent",
+    "τ-retry/branch/unarmed @ unarmed"
+  ],
+  "from": "search: seed 0",
+  "steps": 1,
+  "taus": 1,
+  "expectedOutbox": [],
+  "tier": "both"
+}

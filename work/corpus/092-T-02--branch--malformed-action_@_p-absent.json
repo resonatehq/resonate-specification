@@ -1,0 +1,12 @@
+{
+  "name": "T-02--branch--malformed-action_@_p-absent",
+  "witness": "T-02/branch/malformed-action @ p:absent",
+  "covers": [
+    "T-02/branch/malformed-action @ p:absent"
+  ],
+  "from": "template: a timer is never targeted",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

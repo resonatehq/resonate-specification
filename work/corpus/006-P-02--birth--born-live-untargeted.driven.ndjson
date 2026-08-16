@@ -1,1 +1,0 @@
-{"kind":"promise.create","now":1010,"req":{"id":"o.a","timeoutAt":9000,"param":{},"tags":{"resonate:origin":"o"}},"res":{"kind":"promise.create","head":{"status":200},"data":{"promise":{"id":"o.a","state":"pending","param":{},"value":{},"tags":{"resonate:origin":"o"},"timeoutAt":9000,"createdAt":1010}}}}

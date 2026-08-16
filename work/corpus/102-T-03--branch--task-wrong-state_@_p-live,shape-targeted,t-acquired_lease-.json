@@ -1,0 +1,13 @@
+{
+  "name": "T-03--branch--task-wrong-state_@_p-live,shape-targeted,t-acquired_lease-expired,version-stale",
+  "witness": "T-03/branch/task-wrong-state @ p:live,shape:targeted,t:acquired.lease-expired,version-stale",
+  "covers": [
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-03/branch/task-wrong-state @ p:live,shape:targeted,t:acquired.lease-expired,version-stale"
+  ],
+  "from": "search: seed 0",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

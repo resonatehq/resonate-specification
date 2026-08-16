@@ -1,0 +1,14 @@
+{
+  "name": "T-03--branch--version-mismatch_@_p-live,shape-targeted,t-pending,version-future",
+  "witness": "T-03/branch/version-mismatch @ p:live,shape:targeted,t:pending,version-future",
+  "covers": [
+    "P-02/birth/born-live-targeted @ p:absent",
+    "P-02/branch/created @ p:absent",
+    "T-03/branch/version-mismatch @ p:live,shape:targeted,t:pending,version-future"
+  ],
+  "from": "template: task create, acquire, fulfil",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

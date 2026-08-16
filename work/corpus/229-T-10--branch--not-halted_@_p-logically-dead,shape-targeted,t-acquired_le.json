@@ -1,0 +1,15 @@
+{
+  "name": "T-10--branch--not-halted_@_p-logically-dead,shape-targeted,t-acquired_lease-expired",
+  "witness": "T-10/branch/not-halted @ p:logically-dead,shape:targeted,t:acquired.lease-expired",
+  "covers": [
+    "P-02/birth/born-live-targeted @ p:absent",
+    "P-02/branch/created @ p:absent",
+    "T-03/branch/acquired @ p:live,shape:targeted,t:pending,version-current",
+    "T-10/branch/not-halted @ p:logically-dead,shape:targeted,t:acquired.lease-expired"
+  ],
+  "from": "search: seed 462",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

@@ -1,0 +1,17 @@
+{
+  "name": "P-03--branch--unsettable_@_p-rejected_timedout,shape-external",
+  "witness": "P-03/branch/unsettable @ p:rejected_timedout,shape:external",
+  "covers": [
+    "P-02/birth/born-live-untargeted @ p:live,shape:targeted,t:acquired.lease-expired,version-current",
+    "P-02/branch/created @ p:live,shape:targeted,t:acquired.lease-expired,version-current",
+    "P-03/branch/unsettable @ p:rejected_timedout,shape:external",
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-04/branch/fenced-create @ p:live,shape:targeted,t:acquired.lease-expired,version-current",
+    "τ-promise-timeout/branch/materialized @ after-due"
+  ],
+  "from": "search: seed 84",
+  "steps": 3,
+  "taus": 1,
+  "expectedOutbox": [],
+  "tier": "both"
+}

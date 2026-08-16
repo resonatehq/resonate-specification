@@ -1,0 +1,14 @@
+{
+  "name": "T-10--branch--continued_@_p-live,shape-targeted,t-halted",
+  "witness": "T-10/branch/continued @ p:live,shape:targeted,t:halted",
+  "covers": [
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-09/branch/halted @ p:live,shape:targeted,t:acquired.lease-live",
+    "T-10/branch/continued @ p:live,shape:targeted,t:halted"
+  ],
+  "from": "template: release and halt and continue",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

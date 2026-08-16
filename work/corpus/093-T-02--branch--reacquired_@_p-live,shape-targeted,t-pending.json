@@ -1,0 +1,14 @@
+{
+  "name": "T-02--branch--reacquired_@_p-live,shape-targeted,t-pending",
+  "witness": "T-02/branch/reacquired @ p:live,shape:targeted,t:pending",
+  "covers": [
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-02/branch/reacquired @ p:live,shape:targeted,t:pending",
+    "T-08/branch/released @ p:live,shape:targeted,t:acquired.lease-live,version-current"
+  ],
+  "from": "template: task.create re-acquires a released task",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

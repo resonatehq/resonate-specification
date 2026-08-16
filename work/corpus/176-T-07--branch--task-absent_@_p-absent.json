@@ -1,0 +1,12 @@
+{
+  "name": "T-07--branch--task-absent_@_p-absent",
+  "witness": "T-07/branch/task-absent @ p:absent",
+  "covers": [
+    "T-07/branch/task-absent @ p:absent"
+  ],
+  "from": "template: fulfil refusals",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

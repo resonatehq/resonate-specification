@@ -1,0 +1,14 @@
+{
+  "name": "P-05--branch--bad-address_@_p-live,shape-external",
+  "witness": "P-05/branch/bad-address @ p:live,shape:external",
+  "covers": [
+    "P-02/birth/born-live-untargeted @ p:absent",
+    "P-02/branch/created @ p:absent",
+    "P-05/branch/bad-address @ p:live,shape:external"
+  ],
+  "from": "template: listeners",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

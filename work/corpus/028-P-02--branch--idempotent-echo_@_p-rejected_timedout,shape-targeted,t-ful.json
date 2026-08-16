@@ -1,0 +1,14 @@
+{
+  "name": "P-02--branch--idempotent-echo_@_p-rejected_timedout,shape-targeted,t-fulfilled",
+  "witness": "P-02/branch/idempotent-echo @ p:rejected_timedout,shape:targeted,t:fulfilled",
+  "covers": [
+    "P-02/branch/idempotent-echo @ p:rejected_timedout,shape:targeted,t:fulfilled",
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-04/branch/task-wrong-state @ p:logically-dead,shape:targeted,t:acquired.lease-expired,version-current"
+  ],
+  "from": "search: seed 4",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

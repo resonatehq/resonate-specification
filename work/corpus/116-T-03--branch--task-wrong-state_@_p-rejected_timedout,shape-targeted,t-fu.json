@@ -1,0 +1,15 @@
+{
+  "name": "T-03--branch--task-wrong-state_@_p-rejected_timedout,shape-targeted,t-fulfilled,version-current",
+  "witness": "T-03/branch/task-wrong-state @ p:rejected_timedout,shape:targeted,t:fulfilled,version-current",
+  "covers": [
+    "P-02/birth/born-dead-rejected-timedout @ p:absent",
+    "P-02/birth/born-dead-targeted-task-fulfilled @ p:absent",
+    "P-02/branch/created @ p:absent",
+    "T-03/branch/task-wrong-state @ p:rejected_timedout,shape:targeted,t:fulfilled,version-current"
+  ],
+  "from": "search: seed 0",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

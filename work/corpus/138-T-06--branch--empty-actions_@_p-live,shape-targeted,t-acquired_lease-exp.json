@@ -1,0 +1,13 @@
+{
+  "name": "T-06--branch--empty-actions_@_p-live,shape-targeted,t-acquired_lease-expired,version-current",
+  "witness": "T-06/branch/empty-actions @ p:live,shape:targeted,t:acquired.lease-expired,version-current",
+  "covers": [
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-06/branch/empty-actions @ p:live,shape:targeted,t:acquired.lease-expired,version-current"
+  ],
+  "from": "search: seed 33",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

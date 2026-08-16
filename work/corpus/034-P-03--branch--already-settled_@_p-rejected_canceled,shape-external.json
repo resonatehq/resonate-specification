@@ -1,0 +1,15 @@
+{
+  "name": "P-03--branch--already-settled_@_p-rejected_canceled,shape-external",
+  "witness": "P-03/branch/already-settled @ p:rejected_canceled,shape:external",
+  "covers": [
+    "P-02/birth/born-live-untargeted @ p:absent",
+    "P-02/branch/created @ p:absent",
+    "P-03/branch/already-settled @ p:rejected_canceled,shape:external",
+    "P-03/branch/settled @ p:live,shape:external"
+  ],
+  "from": "template: settlement refusals",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

@@ -1,0 +1,15 @@
+{
+  "name": "P-03--branch--unsettable_@_p-rejected_timedout,shape-targeted,t-fulfilled",
+  "witness": "P-03/branch/unsettable @ p:rejected_timedout,shape:targeted,t:fulfilled",
+  "covers": [
+    "P-02/birth/born-live-targeted @ p:absent",
+    "P-02/branch/created @ p:absent",
+    "P-03/branch/unsettable @ p:rejected_timedout,shape:targeted,t:fulfilled",
+    "T-06/branch/task-wrong-state @ p:logically-dead,shape:targeted,t:pending,version-future"
+  ],
+  "from": "search: seed 30",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

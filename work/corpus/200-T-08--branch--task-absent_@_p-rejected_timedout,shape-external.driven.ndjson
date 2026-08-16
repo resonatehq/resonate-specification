@@ -1,0 +1,2 @@
+{"kind":"promise.create","now":39466,"req":{"id":"o.a0","timeoutAt":1388,"param":{},"tags":{"resonate:external":"true","resonate:origin":"o"}},"res":{"kind":"promise.create","head":{"status":200},"data":{"promise":{"id":"o.a0","state":"rejected_timedout","param":{},"value":{},"tags":{"resonate:external":"true","resonate:origin":"o"},"timeoutAt":1388,"createdAt":1388,"settledAt":1388}}}}
+{"kind":"task.release","now":65391,"req":{"id":"o.a0","version":2},"res":{"kind":"task.release","head":{"status":404},"data":{}}}

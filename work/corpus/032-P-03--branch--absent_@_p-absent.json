@@ -1,0 +1,12 @@
+{
+  "name": "P-03--branch--absent_@_p-absent",
+  "witness": "P-03/branch/absent @ p:absent",
+  "covers": [
+    "P-03/branch/absent @ p:absent"
+  ],
+  "from": "template: settlement refusals",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

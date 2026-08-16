@@ -1,0 +1,15 @@
+{
+  "name": "P-04--callback--registered_@_p-live,shape-external",
+  "witness": "P-04/callback/registered @ p:live,shape:external",
+  "covers": [
+    "P-02/birth/born-live-untargeted @ p:absent",
+    "P-02/branch/created @ p:absent",
+    "P-04/callback/registered @ p:live,shape:external",
+    "T-02/branch/born-live-acquired @ p:absent"
+  ],
+  "from": "template: a P-04 callback drained onto an awaiter past its own deadline",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

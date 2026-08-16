@@ -1,0 +1,14 @@
+{
+  "name": "T-06--branch--self-awaited_@_p-rejected_timedout,shape-targeted,t-fulfilled,version-current",
+  "witness": "T-06/branch/self-awaited @ p:rejected_timedout,shape:targeted,t:fulfilled,version-current",
+  "covers": [
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-03/branch/task-wrong-state @ p:logically-dead,shape:targeted,t:acquired.lease-expired,version-stale",
+    "T-06/branch/self-awaited @ p:rejected_timedout,shape:targeted,t:fulfilled,version-current"
+  ],
+  "from": "search: seed 578",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

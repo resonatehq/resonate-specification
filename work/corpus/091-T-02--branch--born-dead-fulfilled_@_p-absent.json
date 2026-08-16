@@ -1,0 +1,12 @@
+{
+  "name": "T-02--branch--born-dead-fulfilled_@_p-absent",
+  "witness": "T-02/branch/born-dead-fulfilled @ p:absent",
+  "covers": [
+    "T-02/branch/born-dead-fulfilled @ p:absent"
+  ],
+  "from": "template: task.create births and re-acquires",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

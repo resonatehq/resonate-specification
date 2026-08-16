@@ -1,0 +1,12 @@
+{
+  "name": "T-09--branch--task-absent_@_p-absent",
+  "witness": "T-09/branch/task-absent @ p:absent",
+  "covers": [
+    "T-09/branch/task-absent @ p:absent"
+  ],
+  "from": "template: release and halt and continue",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

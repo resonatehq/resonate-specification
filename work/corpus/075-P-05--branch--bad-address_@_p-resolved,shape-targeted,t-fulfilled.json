@@ -1,0 +1,17 @@
+{
+  "name": "P-05--branch--bad-address_@_p-resolved,shape-targeted,t-fulfilled",
+  "witness": "P-05/branch/bad-address @ p:resolved,shape:targeted,t:fulfilled",
+  "covers": [
+    "P-02/birth/born-live-targeted @ p:absent",
+    "P-02/branch/created @ p:absent",
+    "P-05/branch/bad-address @ p:resolved,shape:targeted,t:fulfilled",
+    "T-03/branch/acquired @ p:live,shape:targeted,t:pending,version-current",
+    "T-07/branch/fulfilled @ p:live,shape:targeted,t:acquired.lease-live,version-current",
+    "τ-lease/branch/expired @ after-due"
+  ],
+  "from": "search: seed 248",
+  "steps": 5,
+  "taus": 1,
+  "expectedOutbox": [],
+  "tier": "both"
+}

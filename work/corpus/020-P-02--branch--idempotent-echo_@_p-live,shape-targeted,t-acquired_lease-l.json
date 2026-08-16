@@ -1,0 +1,13 @@
+{
+  "name": "P-02--branch--idempotent-echo_@_p-live,shape-targeted,t-acquired_lease-live",
+  "witness": "P-02/branch/idempotent-echo @ p:live,shape:targeted,t:acquired.lease-live",
+  "covers": [
+    "P-02/branch/idempotent-echo @ p:live,shape:targeted,t:acquired.lease-live",
+    "T-02/branch/born-live-acquired @ p:absent"
+  ],
+  "from": "search: seed 1",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

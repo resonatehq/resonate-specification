@@ -1,0 +1,14 @@
+{
+  "name": "T-08--branch--task-wrong-state_@_p-live,shape-targeted,t-halted,version-future",
+  "witness": "T-08/branch/task-wrong-state @ p:live,shape:targeted,t:halted,version-future",
+  "covers": [
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-08/branch/task-wrong-state @ p:live,shape:targeted,t:halted,version-future",
+    "T-09/branch/halted @ p:live,shape:targeted,t:acquired.lease-expired"
+  ],
+  "from": "search: seed 148",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

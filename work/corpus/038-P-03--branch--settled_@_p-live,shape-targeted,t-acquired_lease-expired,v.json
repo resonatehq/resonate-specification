@@ -1,0 +1,17 @@
+{
+  "name": "P-03--branch--settled_@_p-live,shape-targeted,t-acquired_lease-expired,version-current",
+  "witness": "P-03/branch/settled @ p:live,shape:targeted,t:acquired.lease-expired,version-current",
+  "covers": [
+    "P-02/birth/born-live-untargeted @ p:live,shape:targeted,t:acquired.lease-live,version-current",
+    "P-02/branch/created @ p:live,shape:targeted,t:acquired.lease-live,version-current",
+    "P-03/branch/settled @ p:live,shape:targeted,t:acquired.lease-expired,version-current",
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-04/branch/fenced-create @ p:live,shape:targeted,t:acquired.lease-live,version-current",
+    "T-04/branch/fenced-settle @ p:live,shape:targeted,t:acquired.lease-expired,version-current"
+  ],
+  "from": "search: seed 66",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

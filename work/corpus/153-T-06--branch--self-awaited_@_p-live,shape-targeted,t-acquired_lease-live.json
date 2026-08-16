@@ -1,0 +1,13 @@
+{
+  "name": "T-06--branch--self-awaited_@_p-live,shape-targeted,t-acquired_lease-live,version-stale",
+  "witness": "T-06/branch/self-awaited @ p:live,shape:targeted,t:acquired.lease-live,version-stale",
+  "covers": [
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-06/branch/self-awaited @ p:live,shape:targeted,t:acquired.lease-live,version-stale"
+  ],
+  "from": "search: seed 36",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

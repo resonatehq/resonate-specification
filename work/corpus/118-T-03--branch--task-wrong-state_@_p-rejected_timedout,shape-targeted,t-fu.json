@@ -1,0 +1,14 @@
+{
+  "name": "T-03--branch--task-wrong-state_@_p-rejected_timedout,shape-targeted,t-fulfilled,version-stale",
+  "witness": "T-03/branch/task-wrong-state @ p:rejected_timedout,shape:targeted,t:fulfilled,version-stale",
+  "covers": [
+    "T-01/branch/found @ p:logically-dead,shape:targeted,t:acquired.lease-expired",
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-03/branch/task-wrong-state @ p:rejected_timedout,shape:targeted,t:fulfilled,version-stale"
+  ],
+  "from": "search: seed 4",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

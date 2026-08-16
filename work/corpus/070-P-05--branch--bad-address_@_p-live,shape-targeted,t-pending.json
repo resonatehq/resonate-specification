@@ -1,0 +1,14 @@
+{
+  "name": "P-05--branch--bad-address_@_p-live,shape-targeted,t-pending",
+  "witness": "P-05/branch/bad-address @ p:live,shape:targeted,t:pending",
+  "covers": [
+    "P-05/branch/bad-address @ p:live,shape:targeted,t:pending",
+    "T-02/branch/born-live-acquired @ p:absent",
+    "τ-lease/branch/expired @ after-due"
+  ],
+  "from": "search: seed 164",
+  "steps": 2,
+  "taus": 1,
+  "expectedOutbox": [],
+  "tier": "both"
+}

@@ -1,0 +1,12 @@
+{
+  "name": "T-06--branch--self-awaited_@_p-absent",
+  "witness": "T-06/branch/self-awaited @ p:absent",
+  "covers": [
+    "T-06/branch/self-awaited @ p:absent"
+  ],
+  "from": "search: seed 13",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

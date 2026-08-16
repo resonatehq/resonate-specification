@@ -1,0 +1,16 @@
+{
+  "name": "P-02--branch--idempotent-echo_@_p-rejected_timedout,shape-external",
+  "witness": "P-02/branch/idempotent-echo @ p:rejected_timedout,shape:external",
+  "covers": [
+    "P-02/birth/born-live-untargeted @ p:live,shape:targeted,t:acquired.lease-live,version-current",
+    "P-02/branch/created @ p:live,shape:targeted,t:acquired.lease-live,version-current",
+    "P-02/branch/idempotent-echo @ p:rejected_timedout,shape:external",
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-04/branch/fenced-create @ p:live,shape:targeted,t:acquired.lease-live,version-current"
+  ],
+  "from": "search: seed 16",
+  "steps": 3,
+  "taus": 1,
+  "expectedOutbox": [],
+  "tier": "both"
+}

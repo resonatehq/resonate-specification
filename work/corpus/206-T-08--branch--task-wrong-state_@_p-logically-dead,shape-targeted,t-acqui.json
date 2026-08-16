@@ -1,0 +1,13 @@
+{
+  "name": "T-08--branch--task-wrong-state_@_p-logically-dead,shape-targeted,t-acquired_lease-expired,version-future",
+  "witness": "T-08/branch/task-wrong-state @ p:logically-dead,shape:targeted,t:acquired.lease-expired,version-future",
+  "covers": [
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-08/branch/task-wrong-state @ p:logically-dead,shape:targeted,t:acquired.lease-expired,version-future"
+  ],
+  "from": "search: seed 222",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

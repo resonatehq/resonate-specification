@@ -1,0 +1,14 @@
+{
+  "name": "T-09--branch--task-absent_@_p-live,shape-timer",
+  "witness": "T-09/branch/task-absent @ p:live,shape:timer",
+  "covers": [
+    "P-02/birth/born-live-untargeted @ p:absent",
+    "P-02/branch/created @ p:absent",
+    "T-09/branch/task-absent @ p:live,shape:timer"
+  ],
+  "from": "search: seed 37",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

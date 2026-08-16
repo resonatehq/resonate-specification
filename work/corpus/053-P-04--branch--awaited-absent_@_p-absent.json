@@ -1,0 +1,12 @@
+{
+  "name": "P-04--branch--awaited-absent_@_p-absent",
+  "witness": "P-04/branch/awaited-absent @ p:absent",
+  "covers": [
+    "P-04/branch/awaited-absent @ p:absent"
+  ],
+  "from": "template: callbacks",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

@@ -1,0 +1,15 @@
+{
+  "name": "T-06--branch--awaited-already-settled_@_p-live,shape-targeted,t-acquired_lease-expired,version-current",
+  "witness": "T-06/branch/awaited-already-settled @ p:live,shape:targeted,t:acquired.lease-expired,version-current",
+  "covers": [
+    "P-02/birth/born-dead-timer-resolved @ p:absent",
+    "P-02/branch/created @ p:absent",
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-06/branch/awaited-already-settled @ p:live,shape:targeted,t:acquired.lease-expired,version-current"
+  ],
+  "from": "search: seed 0",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

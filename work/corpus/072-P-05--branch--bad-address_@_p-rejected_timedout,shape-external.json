@@ -1,0 +1,14 @@
+{
+  "name": "P-05--branch--bad-address_@_p-rejected_timedout,shape-external",
+  "witness": "P-05/branch/bad-address @ p:rejected_timedout,shape:external",
+  "covers": [
+    "P-02/birth/born-dead-rejected-timedout @ p:absent",
+    "P-02/branch/created @ p:absent",
+    "P-05/branch/bad-address @ p:rejected_timedout,shape:external"
+  ],
+  "from": "search: seed 224",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

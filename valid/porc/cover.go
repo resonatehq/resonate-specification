@@ -134,6 +134,81 @@ func versionFact(want, got uint64) string {
 // bugs went with the twenty-line version of this that covered the drain
 // alone; this was five times its size.
 
+// contextOf crosses a branch with the pre-state it fired in.
+//
+// A branch alone says WHICH way the handler went. It does not say what the
+// world looked like when it went that way, and that is half the semantics:
+// `T-03/acquired` against a live promise and against one whose deadline has
+// passed but whose timeout has not fired are the same branch and different
+// behaviours. The specification's three-valued liveness lives here, not in
+// the branch.
+func contextOf(o Op, pre *ServerState) string {
+	now := o.Now
+	id := o.ID
+	if o.Kind == "task.create" && o.Action != nil {
+		id = o.Action.ID
+	}
+	parts := []string{"p:" + promiseFact(pre, id, now)}
+	if p := pre.GetPromise(id); p != nil {
+		parts = append(parts, "shape:"+tagShape(p.Tags))
+	}
+	if t := pre.GetTask(id); t != nil {
+		parts = append(parts, "t:"+taskFact(pre, id, now))
+		switch o.Kind {
+		case "task.acquire", "task.fence", "task.suspend", "task.fulfill", "task.release":
+			parts = append(parts, versionFact(o.Version, t.Version))
+		}
+	}
+	return strings.Join(parts, ",")
+}
+
+// tauContext is the axis that matters for internal steps: WHEN the step was
+// fired relative to the deadline it is about.
+//
+// Firing a τ is not interesting; firing it at the right moment is. The three
+// positions — before its obligation is due, at the instant it comes due, and
+// after — are what separates "the timeout fired" from "the timeout fired
+// early" from "the timeout fired late, and something else got there first".
+// TIMEOUT ALWAYS WINS is a claim about the third.
+func tauContext(kind, arg, arg2 string, now uint64, pre *ServerState) string {
+	due := func(d *uint64) string {
+		if d == nil {
+			return "unarmed"
+		}
+		switch {
+		case now < *d:
+			return "before-due"
+		case now == *d:
+			return "at-due"
+		default:
+			return "after-due"
+		}
+	}
+	switch kind {
+	case "R1":
+		if p := pre.GetPromise(arg); p != nil {
+			return due(&p.TimeoutAt)
+		}
+	case "R5":
+		if t := pre.GetTask(arg); t != nil {
+			return due(t.ExpiresAt)
+		}
+	case "R6":
+		if t := pre.GetTask(arg); t != nil {
+			return due(t.RetryAt)
+		}
+	case "R4":
+		// The drain's clock question is about the AWAITER's own deadline:
+		// whether the wake it is carrying is still owed.
+		if p := pre.GetPromise(arg2); p != nil {
+			return "awaiter:" + due(&p.TimeoutAt)
+		}
+	case "R3":
+		return "n/a"
+	}
+	return "absent"
+}
+
 func containsStr(xs []string, x string) bool {
 	for _, s := range xs {
 		if s == x {
@@ -677,9 +752,12 @@ func bucketsOf(d Discipline, script []step) []string {
 	s := &ServerState{}
 	for _, st := range script {
 		before := len(s.Branches)
+		var ctx string
 		if st.op != nil {
+			ctx = contextOf(*st.op, s.clone())
 			st.op.apply(s, d)
 		} else {
+			ctx = tauContext(st.internal, st.arg, st.arg2, st.now, s.clone())
 			switch st.internal {
 			case "R1":
 				s.ProcessPromiseTimeout(st.arg, st.now)
@@ -694,7 +772,7 @@ func bucketsOf(d Discipline, script []step) []string {
 			}
 		}
 		for _, b := range s.Branches[before:] {
-			out = append(out, b.Handler+"/"+b.Point+"/"+b.Taken)
+			out = append(out, b.Handler+"/"+b.Point+"/"+b.Taken+" @ "+ctx)
 		}
 	}
 	return out
@@ -1089,11 +1167,22 @@ var Catalogue = []Branch{
 // Unreached names the catalogued branches no case in the corpus covers.
 // The half a search cannot supply: a behaviour never reached looks exactly
 // like one that does not exist.
+func branchPart(k string) string {
+	if i := strings.Index(k, " @ "); i >= 0 {
+		return k[:i]
+	}
+	return k
+}
+
 func Unreached(covered map[string]bool) []string {
+	hit := map[string]bool{}
+	for k := range covered {
+		hit[branchPart(k)] = true
+	}
 	var out []string
 	for _, b := range Catalogue {
 		k := b.Handler + "/" + b.Point + "/" + b.Taken
-		if !covered[k] {
+		if !hit[k] {
 			out = append(out, k)
 		}
 	}
@@ -1110,9 +1199,12 @@ func Uncatalogued(covered map[string]bool) []string {
 		in[b.Handler+"/"+b.Point+"/"+b.Taken] = true
 	}
 	var out []string
+	seen := map[string]bool{}
 	for k := range covered {
-		if !in[k] {
-			out = append(out, k)
+		b := branchPart(k)
+		if !in[b] && !seen[b] {
+			seen[b] = true
+			out = append(out, b)
 		}
 	}
 	sort.Strings(out)

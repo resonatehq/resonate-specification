@@ -1,0 +1,18 @@
+{
+  "name": "T-06--branch--self-awaited_@_p-resolved,shape-external",
+  "witness": "T-06/branch/self-awaited @ p:resolved,shape:external",
+  "covers": [
+    "P-02/birth/born-live-untargeted @ p:live,shape:targeted,t:acquired.lease-live,version-current",
+    "P-02/branch/created @ p:live,shape:targeted,t:acquired.lease-live,version-current",
+    "P-03/branch/settled @ p:live,shape:targeted,t:acquired.lease-live,version-current",
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-04/branch/fenced-create @ p:live,shape:targeted,t:acquired.lease-live,version-current",
+    "T-04/branch/fenced-settle @ p:live,shape:targeted,t:acquired.lease-live,version-current",
+    "T-06/branch/self-awaited @ p:resolved,shape:external"
+  ],
+  "from": "search: seed 11",
+  "steps": 4,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

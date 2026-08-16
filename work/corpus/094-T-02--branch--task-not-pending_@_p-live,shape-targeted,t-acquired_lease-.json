@@ -1,0 +1,13 @@
+{
+  "name": "T-02--branch--task-not-pending_@_p-live,shape-targeted,t-acquired_lease-live",
+  "witness": "T-02/branch/task-not-pending @ p:live,shape:targeted,t:acquired.lease-live",
+  "covers": [
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-02/branch/task-not-pending @ p:live,shape:targeted,t:acquired.lease-live"
+  ],
+  "from": "template: task.create births and re-acquires",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

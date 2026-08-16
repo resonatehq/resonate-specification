@@ -1,0 +1,15 @@
+{
+  "name": "P-05--branch--bad-address_@_p-rejected_timedout,shape-targeted,t-fulfilled",
+  "witness": "P-05/branch/bad-address @ p:rejected_timedout,shape:targeted,t:fulfilled",
+  "covers": [
+    "P-02/birth/born-dead-rejected-timedout @ p:absent",
+    "P-02/birth/born-dead-targeted-task-fulfilled @ p:absent",
+    "P-02/branch/created @ p:absent",
+    "P-05/branch/bad-address @ p:rejected_timedout,shape:targeted,t:fulfilled"
+  ],
+  "from": "search: seed 182",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

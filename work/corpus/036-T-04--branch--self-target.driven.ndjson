@@ -1,1 +1,0 @@
-{"kind":"task.fence","now":1040,"req":{"id":"o.x","version":1,"action":{"kind":"promise.create","head":{},"data":{"id":"o.x","timeoutAt":9000,"param":{},"tags":{"resonate:external":"true","resonate:origin":"o"}}}},"res":{"kind":"task.fence","head":{"status":400},"data":{}}}

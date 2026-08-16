@@ -1,0 +1,14 @@
+{
+  "name": "T-06--branch--self-awaited_@_p-rejected_timedout,shape-targeted,t-fulfilled,version-stale",
+  "witness": "T-06/branch/self-awaited @ p:rejected_timedout,shape:targeted,t:fulfilled,version-stale",
+  "covers": [
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-06/branch/self-awaited @ p:rejected_timedout,shape:targeted,t:fulfilled,version-stale",
+    "τ-listener/branch/no-such-listener @ n/a"
+  ],
+  "from": "search: seed 146",
+  "steps": 2,
+  "taus": 1,
+  "expectedOutbox": [],
+  "tier": "both"
+}

@@ -1,0 +1,15 @@
+{
+  "name": "P-01--branch--found_@_p-live,shape-targeted,t-acquired_lease-live",
+  "witness": "P-01/branch/found @ p:live,shape:targeted,t:acquired.lease-live",
+  "covers": [
+    "P-01/branch/found @ p:live,shape:targeted,t:acquired.lease-live",
+    "P-02/birth/born-live-targeted @ p:absent",
+    "P-02/branch/created @ p:absent",
+    "T-03/branch/acquired @ p:live,shape:targeted,t:pending,version-current"
+  ],
+  "from": "search: seed 18",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

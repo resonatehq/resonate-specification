@@ -1,0 +1,15 @@
+{
+  "name": "T-03--branch--task-wrong-state_@_p-live,shape-targeted,t-acquired_lease-live,version-current",
+  "witness": "T-03/branch/task-wrong-state @ p:live,shape:targeted,t:acquired.lease-live,version-current",
+  "covers": [
+    "P-02/birth/born-live-targeted @ p:absent",
+    "P-02/branch/created @ p:absent",
+    "T-03/branch/acquired @ p:live,shape:targeted,t:pending,version-current",
+    "T-03/branch/task-wrong-state @ p:live,shape:targeted,t:acquired.lease-live,version-current"
+  ],
+  "from": "template: two workers race for one task",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

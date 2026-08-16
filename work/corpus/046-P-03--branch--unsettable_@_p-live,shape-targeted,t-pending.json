@@ -1,0 +1,14 @@
+{
+  "name": "P-03--branch--unsettable_@_p-live,shape-targeted,t-pending",
+  "witness": "P-03/branch/unsettable @ p:live,shape:targeted,t:pending",
+  "covers": [
+    "P-02/birth/born-live-targeted @ p:absent",
+    "P-02/branch/created @ p:absent",
+    "P-03/branch/unsettable @ p:live,shape:targeted,t:pending"
+  ],
+  "from": "search: seed 34",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

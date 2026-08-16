@@ -1,0 +1,15 @@
+{
+  "name": "P-01--branch--found_@_p-resolved,shape-external",
+  "witness": "P-01/branch/found @ p:resolved,shape:external",
+  "covers": [
+    "P-01/branch/found @ p:resolved,shape:external",
+    "P-02/birth/born-live-untargeted @ p:absent",
+    "P-02/branch/created @ p:absent",
+    "P-03/branch/settled @ p:live,shape:external"
+  ],
+  "from": "template: promise lifecycle, external",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

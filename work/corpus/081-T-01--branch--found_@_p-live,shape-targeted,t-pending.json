@@ -1,0 +1,14 @@
+{
+  "name": "T-01--branch--found_@_p-live,shape-targeted,t-pending",
+  "witness": "T-01/branch/found @ p:live,shape:targeted,t:pending",
+  "covers": [
+    "P-02/birth/born-live-targeted @ p:absent",
+    "P-02/branch/created @ p:absent",
+    "T-01/branch/found @ p:live,shape:targeted,t:pending"
+  ],
+  "from": "template: retry re-dispatches a pending task",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

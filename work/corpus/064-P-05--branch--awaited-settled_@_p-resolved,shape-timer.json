@@ -1,0 +1,14 @@
+{
+  "name": "P-05--branch--awaited-settled_@_p-resolved,shape-timer",
+  "witness": "P-05/branch/awaited-settled @ p:resolved,shape:timer",
+  "covers": [
+    "P-02/birth/born-dead-timer-resolved @ p:absent",
+    "P-02/branch/created @ p:absent",
+    "P-05/branch/awaited-settled @ p:resolved,shape:timer"
+  ],
+  "from": "search: seed 140",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

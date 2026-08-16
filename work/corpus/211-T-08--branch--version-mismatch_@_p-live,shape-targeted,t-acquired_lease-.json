@@ -1,0 +1,13 @@
+{
+  "name": "T-08--branch--version-mismatch_@_p-live,shape-targeted,t-acquired_lease-expired,version-future",
+  "witness": "T-08/branch/version-mismatch @ p:live,shape:targeted,t:acquired.lease-expired,version-future",
+  "covers": [
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-08/branch/version-mismatch @ p:live,shape:targeted,t:acquired.lease-expired,version-future"
+  ],
+  "from": "search: seed 78",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

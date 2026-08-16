@@ -1,0 +1,13 @@
+{
+  "name": "P-02--birth--born-live-targeted-delayed_@_p-absent",
+  "witness": "P-02/birth/born-live-targeted-delayed @ p:absent",
+  "covers": [
+    "P-02/birth/born-live-targeted-delayed @ p:absent",
+    "P-02/branch/created @ p:absent"
+  ],
+  "from": "template: a delayed first dispatch",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

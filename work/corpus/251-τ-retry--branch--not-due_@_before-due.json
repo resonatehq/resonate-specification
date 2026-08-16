@@ -1,0 +1,14 @@
+{
+  "name": "τ-retry--branch--not-due_@_before-due",
+  "witness": "τ-retry/branch/not-due @ before-due",
+  "covers": [
+    "P-02/birth/born-live-targeted-delayed @ p:absent",
+    "P-02/branch/created @ p:absent",
+    "τ-retry/branch/not-due @ before-due"
+  ],
+  "from": "template: a delayed first dispatch",
+  "steps": 1,
+  "taus": 1,
+  "expectedOutbox": [],
+  "tier": "both"
+}

@@ -1,0 +1,14 @@
+{
+  "name": "T-03--branch--task-absent_@_p-rejected_timedout,shape-external",
+  "witness": "T-03/branch/task-absent @ p:rejected_timedout,shape:external",
+  "covers": [
+    "P-02/birth/born-dead-rejected-timedout @ p:absent",
+    "P-02/branch/created @ p:absent",
+    "T-03/branch/task-absent @ p:rejected_timedout,shape:external"
+  ],
+  "from": "search: seed 4",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

@@ -1,0 +1,14 @@
+{
+  "name": "T-08--branch--task-wrong-state_@_p-rejected_timedout,shape-targeted,t-fulfilled,version-stale",
+  "witness": "T-08/branch/task-wrong-state @ p:rejected_timedout,shape:targeted,t:fulfilled,version-stale",
+  "covers": [
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-08/branch/task-wrong-state @ p:rejected_timedout,shape:targeted,t:fulfilled,version-stale",
+    "τ-promise-timeout/branch/materialized @ after-due"
+  ],
+  "from": "search: seed 172",
+  "steps": 2,
+  "taus": 1,
+  "expectedOutbox": [],
+  "tier": "both"
+}

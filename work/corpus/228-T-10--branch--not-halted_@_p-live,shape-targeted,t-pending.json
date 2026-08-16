@@ -1,0 +1,15 @@
+{
+  "name": "T-10--branch--not-halted_@_p-live,shape-targeted,t-pending",
+  "witness": "T-10/branch/not-halted @ p:live,shape:targeted,t:pending",
+  "covers": [
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-09/branch/halted @ p:live,shape:targeted,t:acquired.lease-live",
+    "T-10/branch/continued @ p:live,shape:targeted,t:halted",
+    "T-10/branch/not-halted @ p:live,shape:targeted,t:pending"
+  ],
+  "from": "template: release and halt and continue",
+  "steps": 4,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

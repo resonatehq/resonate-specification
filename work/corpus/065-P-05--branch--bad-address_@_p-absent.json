@@ -1,0 +1,12 @@
+{
+  "name": "P-05--branch--bad-address_@_p-absent",
+  "witness": "P-05/branch/bad-address @ p:absent",
+  "covers": [
+    "P-05/branch/bad-address @ p:absent"
+  ],
+  "from": "search: seed 21",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

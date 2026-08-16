@@ -1,0 +1,14 @@
+{
+  "name": "T-06--branch--task-wrong-state_@_p-live,shape-targeted,t-pending,version-current",
+  "witness": "T-06/branch/task-wrong-state @ p:live,shape:targeted,t:pending,version-current",
+  "covers": [
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-06/branch/task-wrong-state @ p:live,shape:targeted,t:pending,version-current",
+    "τ-lease/branch/expired @ after-due"
+  ],
+  "from": "search: seed 11",
+  "steps": 2,
+  "taus": 1,
+  "expectedOutbox": [],
+  "tier": "both"
+}

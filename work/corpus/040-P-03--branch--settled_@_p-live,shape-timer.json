@@ -1,0 +1,14 @@
+{
+  "name": "P-03--branch--settled_@_p-live,shape-timer",
+  "witness": "P-03/branch/settled @ p:live,shape:timer",
+  "covers": [
+    "P-02/birth/born-live-untargeted @ p:absent",
+    "P-02/branch/created @ p:absent",
+    "P-03/branch/settled @ p:live,shape:timer"
+  ],
+  "from": "search: seed 37",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

@@ -1,0 +1,12 @@
+{
+  "name": "P-03--branch--unsettable_@_p-absent",
+  "witness": "P-03/branch/unsettable @ p:absent",
+  "covers": [
+    "P-03/branch/unsettable @ p:absent"
+  ],
+  "from": "search: seed 10",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

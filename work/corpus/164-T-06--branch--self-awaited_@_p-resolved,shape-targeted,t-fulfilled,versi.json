@@ -1,0 +1,14 @@
+{
+  "name": "T-06--branch--self-awaited_@_p-resolved,shape-targeted,t-fulfilled,version-stale",
+  "witness": "T-06/branch/self-awaited @ p:resolved,shape:targeted,t:fulfilled,version-stale",
+  "covers": [
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-06/branch/self-awaited @ p:resolved,shape:targeted,t:fulfilled,version-stale",
+    "T-07/branch/fulfilled @ p:live,shape:targeted,t:acquired.lease-live,version-current"
+  ],
+  "from": "search: seed 245",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

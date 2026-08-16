@@ -1,0 +1,13 @@
+{
+  "name": "T-06--branch--duplicate-awaited_@_p-live,shape-targeted,t-acquired_lease-live,version-current",
+  "witness": "T-06/branch/duplicate-awaited @ p:live,shape:targeted,t:acquired.lease-live,version-current",
+  "covers": [
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-06/branch/duplicate-awaited @ p:live,shape:targeted,t:acquired.lease-live,version-current"
+  ],
+  "from": "template: suspend refusals",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

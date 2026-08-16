@@ -1,0 +1,15 @@
+{
+  "name": "τ-promise-timeout--branch--not-due_@_after-due",
+  "witness": "τ-promise-timeout/branch/not-due @ after-due",
+  "covers": [
+    "P-02/birth/born-live-untargeted @ p:absent",
+    "P-02/branch/created @ p:absent",
+    "τ-promise-timeout/branch/materialized @ after-due",
+    "τ-promise-timeout/branch/not-due @ after-due"
+  ],
+  "from": "template: the promise timeout τ, and firing it twice",
+  "steps": 1,
+  "taus": 2,
+  "expectedOutbox": [],
+  "tier": "both"
+}

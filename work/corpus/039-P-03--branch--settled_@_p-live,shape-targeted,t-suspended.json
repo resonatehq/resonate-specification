@@ -1,0 +1,17 @@
+{
+  "name": "P-03--branch--settled_@_p-live,shape-targeted,t-suspended",
+  "witness": "P-03/branch/settled @ p:live,shape:targeted,t:suspended",
+  "covers": [
+    "P-02/birth/born-live-untargeted @ p:absent",
+    "P-02/branch/created @ p:absent",
+    "P-03/branch/settled @ p:live,shape:targeted,t:suspended",
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-06/branch/suspended @ p:live,shape:targeted,t:acquired.lease-live,version-current",
+    "T-06/callback/registered @ p:live,shape:targeted,t:acquired.lease-live,version-current"
+  ],
+  "from": "template: a suspended task whose own promise is settled under it",
+  "steps": 4,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

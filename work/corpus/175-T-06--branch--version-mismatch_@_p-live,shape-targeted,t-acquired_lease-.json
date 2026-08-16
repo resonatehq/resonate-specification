@@ -1,0 +1,13 @@
+{
+  "name": "T-06--branch--version-mismatch_@_p-live,shape-targeted,t-acquired_lease-live,version-future",
+  "witness": "T-06/branch/version-mismatch @ p:live,shape:targeted,t:acquired.lease-live,version-future",
+  "covers": [
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-06/branch/version-mismatch @ p:live,shape:targeted,t:acquired.lease-live,version-future"
+  ],
+  "from": "template: suspend refusals",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

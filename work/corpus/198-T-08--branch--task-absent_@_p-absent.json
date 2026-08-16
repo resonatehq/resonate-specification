@@ -1,0 +1,12 @@
+{
+  "name": "T-08--branch--task-absent_@_p-absent",
+  "witness": "T-08/branch/task-absent @ p:absent",
+  "covers": [
+    "T-08/branch/task-absent @ p:absent"
+  ],
+  "from": "search: seed 1",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

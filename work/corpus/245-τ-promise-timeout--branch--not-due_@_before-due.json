@@ -1,0 +1,14 @@
+{
+  "name": "τ-promise-timeout--branch--not-due_@_before-due",
+  "witness": "τ-promise-timeout/branch/not-due @ before-due",
+  "covers": [
+    "P-02/birth/born-live-untargeted @ p:absent",
+    "P-02/branch/created @ p:absent",
+    "τ-promise-timeout/branch/not-due @ before-due"
+  ],
+  "from": "template: τ no-ops: nothing is armed",
+  "steps": 1,
+  "taus": 1,
+  "expectedOutbox": [],
+  "tier": "both"
+}

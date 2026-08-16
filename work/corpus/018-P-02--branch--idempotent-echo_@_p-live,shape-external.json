@@ -1,0 +1,14 @@
+{
+  "name": "P-02--branch--idempotent-echo_@_p-live,shape-external",
+  "witness": "P-02/branch/idempotent-echo @ p:live,shape:external",
+  "covers": [
+    "P-02/birth/born-live-untargeted @ p:absent",
+    "P-02/branch/created @ p:absent",
+    "P-02/branch/idempotent-echo @ p:live,shape:external"
+  ],
+  "from": "template: promise create is idempotent",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

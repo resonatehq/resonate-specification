@@ -1,0 +1,14 @@
+{
+  "name": "P-02--branch--idempotent-echo_@_p-logically-dead,shape-targeted,t-pending",
+  "witness": "P-02/branch/idempotent-echo @ p:logically-dead,shape:targeted,t:pending",
+  "covers": [
+    "P-02/branch/idempotent-echo @ p:logically-dead,shape:targeted,t:pending",
+    "T-02/branch/born-live-acquired @ p:absent",
+    "τ-lease/branch/expired @ after-due"
+  ],
+  "from": "search: seed 182",
+  "steps": 2,
+  "taus": 1,
+  "expectedOutbox": [],
+  "tier": "both"
+}

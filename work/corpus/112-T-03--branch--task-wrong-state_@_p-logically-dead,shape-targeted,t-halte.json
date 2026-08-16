@@ -1,0 +1,14 @@
+{
+  "name": "T-03--branch--task-wrong-state_@_p-logically-dead,shape-targeted,t-halted,version-current",
+  "witness": "T-03/branch/task-wrong-state @ p:logically-dead,shape:targeted,t:halted,version-current",
+  "covers": [
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-03/branch/task-wrong-state @ p:logically-dead,shape:targeted,t:halted,version-current",
+    "T-09/branch/halted @ p:live,shape:targeted,t:acquired.lease-live"
+  ],
+  "from": "search: seed 530",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

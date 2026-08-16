@@ -1,0 +1,14 @@
+{
+  "name": "P-02--branch--idempotent-echo_@_p-resolved,shape-targeted,t-fulfilled",
+  "witness": "P-02/branch/idempotent-echo @ p:resolved,shape:targeted,t:fulfilled",
+  "covers": [
+    "P-02/branch/idempotent-echo @ p:resolved,shape:targeted,t:fulfilled",
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-07/branch/fulfilled @ p:live,shape:targeted,t:acquired.lease-live,version-current"
+  ],
+  "from": "search: seed 37",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

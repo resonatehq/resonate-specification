@@ -1,0 +1,14 @@
+{
+  "name": "P-01--branch--found_@_p-resolved,shape-timer",
+  "witness": "P-01/branch/found @ p:resolved,shape:timer",
+  "covers": [
+    "P-01/branch/found @ p:resolved,shape:timer",
+    "P-02/birth/born-dead-timer-resolved @ p:absent",
+    "P-02/branch/created @ p:absent"
+  ],
+  "from": "template: timer born past its deadline resolves",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

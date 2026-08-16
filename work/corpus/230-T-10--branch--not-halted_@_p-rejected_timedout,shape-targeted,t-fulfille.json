@@ -1,0 +1,14 @@
+{
+  "name": "T-10--branch--not-halted_@_p-rejected_timedout,shape-targeted,t-fulfilled",
+  "witness": "T-10/branch/not-halted @ p:rejected_timedout,shape:targeted,t:fulfilled",
+  "covers": [
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-09/branch/already-fulfilled @ p:logically-dead,shape:targeted,t:acquired.lease-expired",
+    "T-10/branch/not-halted @ p:rejected_timedout,shape:targeted,t:fulfilled"
+  ],
+  "from": "template: halt and continue on a dead promise",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

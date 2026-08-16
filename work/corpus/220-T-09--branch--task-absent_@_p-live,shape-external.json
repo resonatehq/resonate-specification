@@ -1,0 +1,16 @@
+{
+  "name": "T-09--branch--task-absent_@_p-live,shape-external",
+  "witness": "T-09/branch/task-absent @ p:live,shape:external",
+  "covers": [
+    "P-02/birth/born-live-untargeted @ p:live,shape:targeted,t:acquired.lease-live,version-current",
+    "P-02/branch/created @ p:live,shape:targeted,t:acquired.lease-live,version-current",
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-04/branch/fenced-create @ p:live,shape:targeted,t:acquired.lease-live,version-current",
+    "T-09/branch/task-absent @ p:live,shape:external"
+  ],
+  "from": "search: seed 125",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

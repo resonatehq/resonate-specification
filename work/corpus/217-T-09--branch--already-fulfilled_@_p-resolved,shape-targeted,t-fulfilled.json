@@ -1,0 +1,14 @@
+{
+  "name": "T-09--branch--already-fulfilled_@_p-resolved,shape-targeted,t-fulfilled",
+  "witness": "T-09/branch/already-fulfilled @ p:resolved,shape:targeted,t:fulfilled",
+  "covers": [
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-07/branch/fulfilled @ p:live,shape:targeted,t:acquired.lease-live,version-current",
+    "T-09/branch/already-fulfilled @ p:resolved,shape:targeted,t:fulfilled"
+  ],
+  "from": "template: halt a fulfilled task",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

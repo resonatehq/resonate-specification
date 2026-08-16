@@ -1,0 +1,12 @@
+{
+  "name": "T-06--branch--empty-actions_@_p-absent",
+  "witness": "T-06/branch/empty-actions @ p:absent",
+  "covers": [
+    "T-06/branch/empty-actions @ p:absent"
+  ],
+  "from": "search: seed 37",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

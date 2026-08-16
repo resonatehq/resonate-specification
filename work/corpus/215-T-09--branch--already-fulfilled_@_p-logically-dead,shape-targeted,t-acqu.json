@@ -1,0 +1,13 @@
+{
+  "name": "T-09--branch--already-fulfilled_@_p-logically-dead,shape-targeted,t-acquired_lease-expired",
+  "witness": "T-09/branch/already-fulfilled @ p:logically-dead,shape:targeted,t:acquired.lease-expired",
+  "covers": [
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-09/branch/already-fulfilled @ p:logically-dead,shape:targeted,t:acquired.lease-expired"
+  ],
+  "from": "template: halt and continue on a dead promise",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

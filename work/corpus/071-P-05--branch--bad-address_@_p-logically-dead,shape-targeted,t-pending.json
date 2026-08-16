@@ -1,0 +1,14 @@
+{
+  "name": "P-05--branch--bad-address_@_p-logically-dead,shape-targeted,t-pending",
+  "witness": "P-05/branch/bad-address @ p:logically-dead,shape:targeted,t:pending",
+  "covers": [
+    "P-02/birth/born-live-targeted @ p:absent",
+    "P-02/branch/created @ p:absent",
+    "P-05/branch/bad-address @ p:logically-dead,shape:targeted,t:pending"
+  ],
+  "from": "search: seed 14",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

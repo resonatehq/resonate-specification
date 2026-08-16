@@ -1,0 +1,19 @@
+{
+  "name": "τ-resume--outcome--fulfilled_@_awaiter-before-due",
+  "witness": "τ-resume/outcome/fulfilled @ awaiter:before-due",
+  "covers": [
+    "P-02/birth/born-live-untargeted @ p:absent",
+    "P-02/branch/created @ p:absent",
+    "P-03/branch/settled @ p:live,shape:external",
+    "P-03/branch/settled @ p:live,shape:targeted,t:suspended",
+    "T-02/branch/born-live-acquired @ p:absent",
+    "T-06/branch/suspended @ p:live,shape:targeted,t:acquired.lease-live,version-current",
+    "T-06/callback/registered @ p:live,shape:targeted,t:acquired.lease-live,version-current",
+    "τ-resume/outcome/fulfilled @ awaiter:before-due"
+  ],
+  "from": "template: a suspended task whose own promise is settled under it",
+  "steps": 5,
+  "taus": 1,
+  "expectedOutbox": [],
+  "tier": "both"
+}

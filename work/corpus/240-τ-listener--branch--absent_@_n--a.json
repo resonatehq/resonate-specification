@@ -1,0 +1,12 @@
+{
+  "name": "τ-listener--branch--absent_@_n--a",
+  "witness": "τ-listener/branch/absent @ n/a",
+  "covers": [
+    "τ-listener/branch/absent @ n/a"
+  ],
+  "from": "search: seed 4",
+  "steps": 0,
+  "taus": 1,
+  "expectedOutbox": [],
+  "tier": "driven"
+}
