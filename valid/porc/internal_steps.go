@@ -22,15 +22,33 @@ import "context"
 
 // R1 processPromiseTimeout — materialize fact P.
 func (s *ServerState) ProcessPromiseTimeout(id string, now uint64) {
+	p := s.GetPromise(id)
+	switch {
+	case p == nil:
+		s.note("τ-promise-timeout", "branch", "absent")
+	case p.State == Pending && p.TimeoutAt <= now:
+		s.note("τ-promise-timeout", "branch", "materialized")
+	default:
+		s.note("τ-promise-timeout", "branch", "not-due")
+	}
 	s.readPromise(Materialized, id, now)
 }
 
 // R3 processListener — deliver a chosen listener of a settled promise its unblock.
 func (s *ServerState) ProcessListener(id, address string, now uint64) {
 	p := s.readPromise(Materialized, id, now)
-	if p == nil || p.State == Pending || !contains(p.Listeners, address) {
+	switch {
+	case p == nil:
+		s.note("τ-listener", "branch", "absent")
+		return
+	case p.State == Pending:
+		s.note("τ-listener", "branch", "awaited-pending")
+		return
+	case !contains(p.Listeners, address):
+		s.note("τ-listener", "branch", "no-such-listener")
 		return
 	}
+	s.note("τ-listener", "branch", "delivered")
 	q := p.clone()
 	q.Listeners = remove(q.Listeners, address)
 	s.SetPromise(q)
@@ -100,16 +118,28 @@ func (s *ServerState) ProcessCallback(id, awaiter string, now uint64) {
 // view: no internal step creates new work for a logically dead task.
 func (s *ServerState) ProcessLeaseTimeout(id string, now uint64) {
 	t := s.GetTask(id)
-	if t == nil || t.ExpiresAt == nil {
+	if t == nil {
+		s.note("τ-lease", "branch", "task-absent")
+		return
+	}
+	if t.ExpiresAt == nil {
+		s.note("τ-lease", "branch", "unarmed")
 		return
 	}
 	if t.State != TaskAcquired || *t.ExpiresAt > now {
+		s.note("τ-lease", "branch", "not-due")
 		return
 	}
 	p := s.readPromise(Projected, t.ID, now)
-	if p == nil || p.State != Pending {
+	if p == nil {
+		s.note("τ-lease", "branch", "promise-absent")
 		return
 	}
+	if p.State != Pending {
+		s.note("τ-lease", "branch", "promise-not-live")
+		return
+	}
+	s.note("τ-lease", "branch", "expired")
 	u := t.clone()
 	u.State = TaskPending
 	u.PID, u.TTL, u.ExpiresAt = nil, nil, nil
@@ -122,16 +152,28 @@ func (s *ServerState) ProcessLeaseTimeout(id string, now uint64) {
 // upsert makes re-emission idempotent, so any `next` is sound.
 func (s *ServerState) ProcessRetryTimeout(id string, next, now uint64) {
 	t := s.GetTask(id)
-	if t == nil || t.RetryAt == nil {
+	if t == nil {
+		s.note("τ-retry", "branch", "task-absent")
+		return
+	}
+	if t.RetryAt == nil {
+		s.note("τ-retry", "branch", "unarmed")
 		return
 	}
 	if t.State != TaskPending || *t.RetryAt > now {
+		s.note("τ-retry", "branch", "not-due")
 		return
 	}
 	p := s.readPromise(Projected, t.ID, now)
-	if p == nil || p.State != Pending {
+	if p == nil {
+		s.note("τ-retry", "branch", "promise-absent")
 		return
 	}
+	if p.State != Pending {
+		s.note("τ-retry", "branch", "promise-not-live")
+		return
+	}
+	s.note("τ-retry", "branch", "dispatched")
 	u := t.clone()
 	u.RetryAt = u64p(next)
 	s.SetTask(u)

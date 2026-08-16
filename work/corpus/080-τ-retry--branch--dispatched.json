@@ -1,0 +1,16 @@
+{
+  "name": "τ-retry--branch--dispatched",
+  "witness": "τ-retry/branch/dispatched",
+  "covers": [
+    "P-02/birth/born-live-targeted",
+    "P-02/branch/created",
+    "τ-retry/branch/dispatched"
+  ],
+  "from": "template: retry re-dispatches a pending task",
+  "steps": 1,
+  "taus": 1,
+  "expectedOutbox": [
+    "execute o.x v0 -\u003e poll://any@w1"
+  ],
+  "tier": "both"
+}

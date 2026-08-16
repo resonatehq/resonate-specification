@@ -1,0 +1,16 @@
+{
+  "name": "T-06--branch--suspended",
+  "witness": "T-06/branch/suspended",
+  "covers": [
+    "P-02/birth/born-live-untargeted",
+    "P-02/branch/created",
+    "T-02/branch/born-live-acquired",
+    "T-06/branch/suspended",
+    "T-06/callback/registered"
+  ],
+  "from": "template: a suspended task whose own promise is settled under it",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

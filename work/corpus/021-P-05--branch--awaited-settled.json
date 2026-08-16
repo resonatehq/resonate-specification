@@ -1,0 +1,15 @@
+{
+  "name": "P-05--branch--awaited-settled",
+  "witness": "P-05/branch/awaited-settled",
+  "covers": [
+    "P-02/birth/born-live-untargeted",
+    "P-02/branch/created",
+    "P-03/branch/settled",
+    "P-05/branch/awaited-settled"
+  ],
+  "from": "template: listeners",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

@@ -1,0 +1,13 @@
+{
+  "name": "T-05--branch--lease-extended",
+  "witness": "T-05/branch/lease-extended",
+  "covers": [
+    "T-02/branch/born-live-acquired",
+    "T-05/branch/lease-extended"
+  ],
+  "from": "template: heartbeat holds the lease",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

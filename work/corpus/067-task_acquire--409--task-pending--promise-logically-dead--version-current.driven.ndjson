@@ -1,3 +1,0 @@
-{"kind":"task.create","now":1019,"req":{"pid":"p0","ttl":500,"action":{"kind":"promise.create","head":{},"data":{"id":"o.x0","timeoutAt":31019,"param":{},"tags":{"resonate:origin":"o","resonate:target":"poll://any@w1"}}}},"res":{"kind":"task.create","head":{"status":200},"data":{"promise":{"id":"o.x0","state":"pending","param":{},"value":{},"tags":{"resonate:origin":"o","resonate:target":"poll://any@w1"},"timeoutAt":31019,"createdAt":1019},"task":{"id":"o.x0","state":"acquired","version":1,"resumes":0,"ttl":500,"pid":"p0"}}}}
-{"kind":"tau.task_lease","now":26960,"target":"o.x0","effect":"fired"}
-{"kind":"task.acquire","now":136517,"req":{"id":"o.x0","version":1,"pid":"p1","ttl":210},"res":{"kind":"task.acquire","head":{"status":409},"data":{}}}

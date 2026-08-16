@@ -126,202 +126,13 @@ func versionFact(want, got uint64) string {
 	}
 }
 
-// ------------------------------------------------------------- classifier
-
-// bucket names the behaviour one external step exercised. The name is the
-// coverage unit and the test-case name; it is built to be read.
-func bucket(o Op, pre *ServerState, res Response) string {
-	now := o.Now
-	parts := []string{o.Kind, fmt.Sprintf("%d", res.Status)}
-	add := func(s ...string) { parts = append(parts, s...) }
-
-	switch o.Kind {
-	case "promise.get":
-		add(promiseFact(pre, o.ID, now))
-
-	case "promise.create":
-		if o.Tags.TimerTargeted() {
-			add("timer-targeted")
-			break
-		}
-		f := promiseFact(pre, o.ID, now)
-		add(f)
-		if f == "absent" {
-			if o.TimeoutAt > now {
-				add("born-live", tagShape(o.Tags))
-			} else {
-				add("born-dead", tagShape(o.Tags))
-			}
-		}
-
-	case "promise.settle":
-		if !settable(o.State) {
-			add("unsettable:" + promiseWire[o.State])
-			break
-		}
-		add(promiseFact(pre, o.ID, now), "to:"+promiseWire[o.State])
-
-	case "promise.register_callback":
-		if o.ID == o.Awaiter {
-			add("self")
-			break
-		}
-		add("awaited:"+promiseFact(pre, o.ID, now),
-			"awaiter:"+promiseFact(pre, o.Awaiter, now))
-		if p := pre.GetPromise(o.ID); p != nil {
-			add("awaited-shape:" + tagShape(p.Tags))
-		}
-		if q := pre.GetPromise(o.Awaiter); q != nil {
-			add("awaiter-shape:" + tagShape(q.Tags))
-		}
-
-	case "promise.register_listener":
-		if !addressValid(o.PID) {
-			add("bad-address")
-			break
-		}
-		add(promiseFact(pre, o.ID, now))
-		if p := pre.GetPromise(o.ID); p != nil {
-			add("shape:" + tagShape(p.Tags))
-		}
-
-	case "task.get":
-		add("task:"+taskFact(pre, o.ID, now), "promise:"+promiseFact(pre, o.ID, now))
-
-	case "task.create":
-		if o.Action == nil {
-			add("no-action")
-			break
-		}
-		if !o.Action.Tags.Has("resonate:target") || o.Action.Tags.TimerTargeted() {
-			add("malformed", tagShape(o.Action.Tags))
-			break
-		}
-		f := promiseFact(pre, o.Action.ID, now)
-		add("promise:" + f)
-		if f == "absent" {
-			if o.Action.TimeoutAt > now {
-				add("born-live")
-			} else {
-				add("born-dead")
-			}
-		} else {
-			add("task:" + taskFact(pre, o.Action.ID, now))
-		}
-
-	case "task.acquire":
-		add("task:"+taskFact(pre, o.ID, now), "promise:"+promiseFact(pre, o.ID, now))
-		if t := pre.GetTask(o.ID); t != nil {
-			add(versionFact(o.Version, t.Version))
-		}
-
-	case "task.fence":
-		if o.Action != nil && o.Action.TargetID() == o.ID {
-			add("self-target")
-			break
-		}
-		add("task:"+taskFact(pre, o.ID, now), "promise:"+promiseFact(pre, o.ID, now))
-		if t := pre.GetTask(o.ID); t != nil {
-			add(versionFact(o.Version, t.Version))
-		}
-		if res.Inner != nil {
-			add(fmt.Sprintf("inner:%s:%d", o.Action.Kind, res.Inner.Status))
-		}
-
-	case "task.heartbeat":
-		// The response is 200 unconditionally, so the whole behaviour of
-		// this handler is in the pre-state facts. Without them the handler
-		// would look like one bucket and be tested by one case.
-		if len(o.Refs) == 0 {
-			add("no-refs")
-			break
-		}
-		for _, r := range o.Refs {
-			f := "task:" + taskFact(pre, r.ID, now)
-			t := pre.GetTask(r.ID)
-			switch {
-			case t == nil:
-			case t.PID == nil || *t.PID != o.PID:
-				f += ".other-pid"
-			case t.Version != r.Version:
-				f += "." + versionFact(r.Version, t.Version)
-			default:
-				f += ".mine.promise:" + promiseFact(pre, r.ID, now)
-			}
-			add(f)
-		}
-
-	case "task.suspend":
-		switch {
-		case len(o.Awaited) == 0:
-			add("empty-awaited")
-		case containsStr(o.Awaited, o.ID):
-			add("self-awaited")
-		case hasDup(o.Awaited):
-			add("duplicate-awaited")
-		default:
-			add("task:"+taskFact(pre, o.ID, now), "promise:"+promiseFact(pre, o.ID, now))
-			if t := pre.GetTask(o.ID); t != nil {
-				add(versionFact(o.Version, t.Version))
-			}
-			for _, a := range o.Awaited {
-				f := "awaited:" + promiseFact(pre, a, now)
-				if p := pre.GetPromise(a); p != nil {
-					f += ":" + tagShape(p.Tags)
-				}
-				add(f)
-			}
-		}
-
-	case "task.fulfill":
-		if !settable(o.State) {
-			add("unsettable:" + promiseWire[o.State])
-			break
-		}
-		add("task:"+taskFact(pre, o.ID, now), "promise:"+promiseFact(pre, o.ID, now))
-		if t := pre.GetTask(o.ID); t != nil {
-			add(versionFact(o.Version, t.Version))
-		}
-		add("to:" + promiseWire[o.State])
-
-	case "task.release":
-		add("task:"+taskFact(pre, o.ID, now), "promise:"+promiseFact(pre, o.ID, now))
-		if t := pre.GetTask(o.ID); t != nil {
-			add(versionFact(o.Version, t.Version))
-		}
-
-	case "task.halt", "task.continue":
-		add("task:"+taskFact(pre, o.ID, now), "promise:"+promiseFact(pre, o.ID, now))
-	}
-
-	return strings.Join(parts, "/")
-}
-
-// noteRoute records how an awaits-edge came to exist.
-func noteRoute(route map[string]string, o Op, res Response) {
-	if res.Status != 200 {
-		return
-	}
-	switch o.Kind {
-	case "promise.register_callback":
-		route[o.ID+"|"+o.Awaiter] = "via:register_callback"
-	case "task.suspend":
-		for _, a := range o.Awaited {
-			route[a+"|"+o.ID] = "via:suspend"
-		}
-	}
-}
-
-func routeOf(route map[string]string, awaited, awaiter string) string {
-	if v, ok := route[awaited+"|"+awaiter]; ok {
-		return v
-	}
-	return "via:none"
-}
-
-func settable(s PromiseState) bool {
-	return s == Resolved || s == Rejected || s == RejectedCanceled
-}
+// The classifier is gone.
+//
+// What stood between here and the script DSL was ~200 lines reconstructing,
+// from (request, pre-state, response), which branch each handler had taken.
+// The handlers now say so themselves, and `bucketsOf` reads the log. Three
+// bugs went with the twenty-line version of this that covered the drain
+// alone; this was five times its size.
 
 func containsStr(xs []string, x string) bool {
 	for _, s := range xs {
@@ -330,68 +141,6 @@ func containsStr(xs []string, x string) bool {
 		}
 	}
 	return false
-}
-
-func hasDup(xs []string) bool {
-	for i := range xs {
-		for j := i + 1; j < len(xs); j++ {
-			if xs[i] == xs[j] {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// ------------------------------------------------------------ τ buckets
-
-// tauBucket names what an internal step DID. A τ that fires with its
-// obligation already discharged is a silent no-op — the specification says
-// so, and an observational trace cannot tell the two apart. Driven traces
-// can, so the no-op is a coverage obligation of its own.
-func tauBucket(name, arg, arg2, via string, now uint64, before, after *ServerState) string {
-	kind := map[string]string{
-		"R1": "tau.promise_timeout", "R3": "tau.listener", "R4": "tau.resume",
-		"R5": "tau.task_lease", "R6": "tau.task_retry",
-	}[name]
-	if before.Key() == after.Key() {
-		return kind + "/no-op"
-	}
-	// A drain that changes state has not necessarily woken anything. The
-	// specification names six outcomes for it (`ResumeOutcome`) because the
-	// difference between `resumed` and `expired` is exactly what TIMEOUT
-	// ALWAYS WINS legislates — and "the state changed" collapses them into
-	// one bucket, which would let a corpus claim to cover the drain while
-	// testing only half of it.
-	if name == "R4" {
-		return kind + "/" + outcomeNote(after) + "/" + via
-	}
-	return kind + "/fired"
-}
-
-// The drain's verdict is no longer reconstructed here. `resumeOne` notes its
-// own outcome and `outcomeNote` reads it back. What stood in this place was
-// twenty lines re-deriving that verdict from the before/after states, and it
-// was wrong twice: it folded `expired` into `fulfilled` (a single
-// `State != Pending` test, reporting whichever branch it reached first), and
-// it could not see which door registered the awaits-edge at all.
-//
-// Neither was a corpus bug. Both were reconstruction bugs, and the
-// reconstruction is what the branch channel removes.
-
-// outcomeNote reads the verdict the drain recorded for itself.
-func outcomeNote(after *ServerState) string {
-	for i := len(after.Branches) - 1; i >= 0; i-- {
-		if b := after.Branches[i]; b.Handler == "τ-resume" && b.Point == "outcome" {
-			return b.Taken
-		}
-	}
-	// The τ changed the state without the drain running at all: it
-	// materialized the awaited's deadline and found no callback to drain.
-	// A distinct behaviour, and one the old classifier hid inside a
-	// fictional `absent` — it reported an outcome for a function that had
-	// not been called.
-	return "not-reached"
 }
 
 // ------------------------------------------------------- the script DSL
@@ -884,7 +633,7 @@ type Case struct {
 // enumerates six, and says why the enum exists rather than a unit return —
 // "`expired` vs `fulfilled` is the distinction TIMEOUT ALWAYS WINS
 // legislates". A corpus reaching four of six has a gap worth printing.
-var Declared = []string{
+var _unusedDeclared = []string{
 	"tau.resume/resumed/via:suspend",
 	"tau.resume/resumed/via:register_callback",
 	"tau.resume/buffered/via:suspend",
@@ -924,38 +673,29 @@ type Corpus struct {
 // and internal. The pre-state for each step comes from `States`, so the
 // classification sees exactly what the handler saw.
 func bucketsOf(d Discipline, script []step) []string {
-	snaps := States(d, script)
 	var out []string
 	s := &ServerState{}
-	// Which door registered each awaits-edge. A callback reaching the drain
-	// via `promise.register_callback` and one reaching it via `task.suspend`
-	// are different behaviours — the second parks the task, the first leaves
-	// it running — and the pre-state at drain time cannot tell them apart.
-	// Without this, greedy cover is satisfied by whichever route it finds
-	// first and the other is never exercised.
-	route := map[string]string{}
-	for i, st := range script {
-		pre := snaps[i].S
+	for _, st := range script {
+		before := len(s.Branches)
 		if st.op != nil {
-			res := st.op.apply(s, d)
-			noteRoute(route, *st.op, res)
-			out = append(out, bucket(*st.op, pre, res))
-			continue
+			st.op.apply(s, d)
+		} else {
+			switch st.internal {
+			case "R1":
+				s.ProcessPromiseTimeout(st.arg, st.now)
+			case "R3":
+				s.ProcessListener(st.arg, st.arg2, st.now)
+			case "R4":
+				s.ProcessCallback(st.arg, st.arg2, st.now)
+			case "R5":
+				s.ProcessLeaseTimeout(st.arg, st.now)
+			case "R6":
+				s.ProcessRetryTimeout(st.arg, st.now, st.now)
+			}
 		}
-		before := s.clone()
-		switch st.internal {
-		case "R1":
-			s.ProcessPromiseTimeout(st.arg, st.now)
-		case "R3":
-			s.ProcessListener(st.arg, st.arg2, st.now)
-		case "R4":
-			s.ProcessCallback(st.arg, st.arg2, st.now)
-		case "R5":
-			s.ProcessLeaseTimeout(st.arg, st.now)
-		case "R6":
-			s.ProcessRetryTimeout(st.arg, st.now, st.now)
+		for _, b := range s.Branches[before:] {
+			out = append(out, b.Handler+"/"+b.Point+"/"+b.Taken)
 		}
-		out = append(out, tauBucket(st.internal, st.arg, st.arg2, routeOf(route, st.arg, st.arg2), st.now, before, s))
 	}
 	return out
 }
@@ -1217,4 +957,164 @@ func (c *Case) Driven(d Discipline) string {
 func (c *Case) Sidecar() string {
 	b, _ := json.MarshalIndent(c, "", "  ")
 	return string(b)
+}
+
+
+// Catalogue mirrors `branchCatalogue` in
+// `spec/02-abstract/effects.lean` — every branch the machine can note.
+//
+// Two copies of one list is a smell, and it is the same smell the port
+// itself is: this package exists because the Lean cannot be run inside a
+// search loop. `TestCatalogueMatchesLean` keeps them honest by counting;
+// the real fix is generating one from the other.
+var Catalogue = []Branch{
+	{"P-01", "branch", "absent"},
+	{"P-01", "branch", "found"},
+	{"P-02", "birth", "born-dead-rejected-timedout"},
+	{"P-02", "birth", "born-dead-targeted-task-fulfilled"},
+	{"P-02", "birth", "born-dead-timer-resolved"},
+	{"P-02", "birth", "born-live-targeted"},
+	{"P-02", "birth", "born-live-targeted-delayed"},
+	{"P-02", "birth", "born-live-untargeted"},
+	{"P-02", "branch", "created"},
+	{"P-02", "branch", "idempotent-echo"},
+	{"P-02", "branch", "timer-targeted"},
+	{"P-03", "branch", "absent"},
+	{"P-03", "branch", "already-settled"},
+	{"P-03", "branch", "settled"},
+	{"P-03", "branch", "unsettable"},
+	{"P-04", "branch", "awaited-absent"},
+	{"P-04", "branch", "awaited-internal"},
+	{"P-04", "branch", "awaiter-absent"},
+	{"P-04", "branch", "awaiter-untargeted"},
+	{"P-04", "branch", "self"},
+	{"P-04", "callback", "awaited-settled"},
+	{"P-04", "callback", "awaiter-not-live"},
+	{"P-04", "callback", "registered"},
+	{"P-05", "branch", "awaited-absent"},
+	{"P-05", "branch", "awaited-internal"},
+	{"P-05", "branch", "awaited-settled"},
+	{"P-05", "branch", "bad-address"},
+	{"P-05", "branch", "registered"},
+	{"T-01", "branch", "found"},
+	{"T-01", "branch", "promise-absent"},
+	{"T-01", "branch", "task-absent"},
+	{"T-02", "branch", "already-fulfilled"},
+	{"T-02", "branch", "born-dead-fulfilled"},
+	{"T-02", "branch", "born-live-acquired"},
+	{"T-02", "branch", "malformed-action"},
+	{"T-02", "branch", "promise-untargeted"},
+	{"T-02", "branch", "reacquired"},
+	{"T-02", "branch", "task-absent"},
+	{"T-02", "branch", "task-not-pending"},
+	{"T-03", "branch", "acquired"},
+	{"T-03", "branch", "promise-absent"},
+	{"T-03", "branch", "promise-not-live"},
+	{"T-03", "branch", "task-absent"},
+	{"T-03", "branch", "task-wrong-state"},
+	{"T-03", "branch", "version-mismatch"},
+	{"T-04", "branch", "fenced-create"},
+	{"T-04", "branch", "fenced-settle"},
+	{"T-04", "branch", "promise-absent"},
+	{"T-04", "branch", "promise-not-live"},
+	{"T-04", "branch", "self-target"},
+	{"T-04", "branch", "task-absent"},
+	{"T-04", "branch", "task-wrong-state"},
+	{"T-04", "branch", "version-mismatch"},
+	{"T-05", "branch", "lease-extended"},
+	{"T-05", "branch", "refused"},
+	{"T-05", "branch", "task-absent"},
+	{"T-06", "branch", "awaited-already-settled"},
+	{"T-06", "branch", "awaited-unusable"},
+	{"T-06", "branch", "duplicate-awaited"},
+	{"T-06", "branch", "empty-actions"},
+	{"T-06", "branch", "promise-absent"},
+	{"T-06", "branch", "promise-not-live"},
+	{"T-06", "branch", "self-awaited"},
+	{"T-06", "branch", "suspended"},
+	{"T-06", "branch", "task-absent"},
+	{"T-06", "branch", "task-wrong-state"},
+	{"T-06", "branch", "version-mismatch"},
+	{"T-06", "callback", "awaited-absent"},
+	{"T-06", "callback", "registered"},
+	{"T-07", "branch", "fulfilled"},
+	{"T-07", "branch", "promise-absent"},
+	{"T-07", "branch", "promise-not-live"},
+	{"T-07", "branch", "task-absent"},
+	{"T-07", "branch", "task-wrong-state"},
+	{"T-07", "branch", "unsettable"},
+	{"T-07", "branch", "version-mismatch"},
+	{"T-08", "branch", "promise-absent"},
+	{"T-08", "branch", "promise-not-live"},
+	{"T-08", "branch", "released"},
+	{"T-08", "branch", "task-absent"},
+	{"T-08", "branch", "task-wrong-state"},
+	{"T-08", "branch", "version-mismatch"},
+	{"T-09", "branch", "already-fulfilled"},
+	{"T-09", "branch", "already-halted"},
+	{"T-09", "branch", "halted"},
+	{"T-09", "branch", "promise-absent"},
+	{"T-09", "branch", "task-absent"},
+	{"T-10", "branch", "continued"},
+	{"T-10", "branch", "not-halted"},
+	{"T-10", "branch", "promise-not-live"},
+	{"T-10", "branch", "task-absent"},
+	{"\u03c4-lease", "branch", "expired"},
+	{"\u03c4-lease", "branch", "not-due"},
+	{"\u03c4-lease", "branch", "promise-absent"},
+	{"\u03c4-lease", "branch", "promise-not-live"},
+	{"\u03c4-lease", "branch", "task-absent"},
+	{"\u03c4-lease", "branch", "unarmed"},
+	{"\u03c4-listener", "branch", "absent"},
+	{"\u03c4-listener", "branch", "awaited-pending"},
+	{"\u03c4-listener", "branch", "delivered"},
+	{"\u03c4-listener", "branch", "no-such-listener"},
+	{"\u03c4-promise-timeout", "branch", "absent"},
+	{"\u03c4-promise-timeout", "branch", "materialized"},
+	{"\u03c4-promise-timeout", "branch", "not-due"},
+	{"\u03c4-resume", "outcome", "absent"},
+	{"\u03c4-resume", "outcome", "buffered"},
+	{"\u03c4-resume", "outcome", "duplicate"},
+	{"\u03c4-resume", "outcome", "expired"},
+	{"\u03c4-resume", "outcome", "fulfilled"},
+	{"\u03c4-resume", "outcome", "resumed"},
+	{"\u03c4-retry", "branch", "dispatched"},
+	{"\u03c4-retry", "branch", "not-due"},
+	{"\u03c4-retry", "branch", "promise-absent"},
+	{"\u03c4-retry", "branch", "promise-not-live"},
+	{"\u03c4-retry", "branch", "task-absent"},
+	{"\u03c4-retry", "branch", "unarmed"},
+}
+
+// Unreached names the catalogued branches no case in the corpus covers.
+// The half a search cannot supply: a behaviour never reached looks exactly
+// like one that does not exist.
+func Unreached(covered map[string]bool) []string {
+	var out []string
+	for _, b := range Catalogue {
+		k := b.Handler + "/" + b.Point + "/" + b.Taken
+		if !covered[k] {
+			out = append(out, k)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// Uncatalogued names branches a run noted that the catalogue does not list
+// — an instrumented handler whose branch nobody declared, and therefore one
+// the coverage report would silently ignore.
+func Uncatalogued(covered map[string]bool) []string {
+	in := map[string]bool{}
+	for _, b := range Catalogue {
+		in[b.Handler+"/"+b.Point+"/"+b.Taken] = true
+	}
+	var out []string
+	for k := range covered {
+		if !in[k] {
+			out = append(out, k)
+		}
+	}
+	sort.Strings(out)
+	return out
 }

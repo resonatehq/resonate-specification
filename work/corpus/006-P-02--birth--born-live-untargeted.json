@@ -1,0 +1,13 @@
+{
+  "name": "P-02--birth--born-live-untargeted",
+  "witness": "P-02/birth/born-live-untargeted",
+  "covers": [
+    "P-02/birth/born-live-untargeted",
+    "P-02/branch/created"
+  ],
+  "from": "template: promise create is idempotent",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

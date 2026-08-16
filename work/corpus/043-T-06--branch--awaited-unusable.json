@@ -1,0 +1,13 @@
+{
+  "name": "T-06--branch--awaited-unusable",
+  "witness": "T-06/branch/awaited-unusable",
+  "covers": [
+    "T-02/branch/born-live-acquired",
+    "T-06/branch/awaited-unusable"
+  ],
+  "from": "template: suspend refusals",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

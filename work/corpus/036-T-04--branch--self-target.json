@@ -1,0 +1,12 @@
+{
+  "name": "T-04--branch--self-target",
+  "witness": "T-04/branch/self-target",
+  "covers": [
+    "T-04/branch/self-target"
+  ],
+  "from": "template: fencing",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

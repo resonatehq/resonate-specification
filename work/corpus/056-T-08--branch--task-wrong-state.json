@@ -1,0 +1,14 @@
+{
+  "name": "T-08--branch--task-wrong-state",
+  "witness": "T-08/branch/task-wrong-state",
+  "covers": [
+    "T-02/branch/born-live-acquired",
+    "T-08/branch/released",
+    "T-08/branch/task-wrong-state"
+  ],
+  "from": "template: release and halt and continue",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

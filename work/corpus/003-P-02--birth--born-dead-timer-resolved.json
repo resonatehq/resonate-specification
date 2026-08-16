@@ -1,0 +1,13 @@
+{
+  "name": "P-02--birth--born-dead-timer-resolved",
+  "witness": "P-02/birth/born-dead-timer-resolved",
+  "covers": [
+    "P-02/birth/born-dead-timer-resolved",
+    "P-02/branch/created"
+  ],
+  "from": "template: timer born past its deadline resolves",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

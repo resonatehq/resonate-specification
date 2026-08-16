@@ -624,7 +624,8 @@ def taskContinue (req : TaskContinueReq) (now : Nat) : H TaskContinueRes := do
           if p.state != .pending then
             return { status := 409 }
           setTask { t with state := .pending, retryAt := some now }
-          return { status := 200 }
+          note "T-10" "branch" "continued"
+      return { status := 200 }
 
 def taskSearch (_req : TaskSearchReq) (_now : Nat) : H TaskSearchRes := do
   return { status := 501 }
@@ -918,6 +919,7 @@ def branchCatalogue : List Branch :=
     { handler := "T-09", point := "branch", taken := "halted" },
     { handler := "T-09", point := "branch", taken := "promise-absent" },
     { handler := "T-09", point := "branch", taken := "task-absent" },
+    { handler := "T-10", point := "branch", taken := "continued" },
     { handler := "T-10", point := "branch", taken := "not-halted" },
     { handler := "T-10", point := "branch", taken := "promise-not-live" },
     { handler := "T-10", point := "branch", taken := "task-absent" },

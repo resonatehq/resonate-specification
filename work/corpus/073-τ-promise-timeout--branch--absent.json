@@ -1,0 +1,12 @@
+{
+  "name": "τ-promise-timeout--branch--absent",
+  "witness": "τ-promise-timeout/branch/absent",
+  "covers": [
+    "τ-promise-timeout/branch/absent"
+  ],
+  "from": "search: seed 2",
+  "steps": 0,
+  "taus": 1,
+  "expectedOutbox": [],
+  "tier": "driven"
+}

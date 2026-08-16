@@ -1,0 +1,18 @@
+{
+  "name": "τ-listener--branch--delivered",
+  "witness": "τ-listener/branch/delivered",
+  "covers": [
+    "P-02/birth/born-live-untargeted",
+    "P-02/branch/created",
+    "P-03/branch/settled",
+    "P-05/branch/registered",
+    "τ-listener/branch/delivered"
+  ],
+  "from": "template: listeners",
+  "steps": 3,
+  "taus": 1,
+  "expectedOutbox": [
+    "unblock o.a -\u003e https://l"
+  ],
+  "tier": "both"
+}

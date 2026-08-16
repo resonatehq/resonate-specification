@@ -1,0 +1,17 @@
+{
+  "name": "τ-resume--outcome--expired",
+  "witness": "τ-resume/outcome/expired",
+  "covers": [
+    "P-02/birth/born-live-untargeted",
+    "P-02/branch/created",
+    "P-03/branch/settled",
+    "P-04/callback/registered",
+    "T-02/branch/born-live-acquired",
+    "τ-resume/outcome/expired"
+  ],
+  "from": "template: a P-04 callback drained onto an awaiter past its own deadline",
+  "steps": 4,
+  "taus": 1,
+  "expectedOutbox": [],
+  "tier": "both"
+}

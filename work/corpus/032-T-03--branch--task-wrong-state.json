@@ -1,0 +1,15 @@
+{
+  "name": "T-03--branch--task-wrong-state",
+  "witness": "T-03/branch/task-wrong-state",
+  "covers": [
+    "P-02/birth/born-live-targeted",
+    "P-02/branch/created",
+    "T-03/branch/acquired",
+    "T-03/branch/task-wrong-state"
+  ],
+  "from": "template: two workers race for one task",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

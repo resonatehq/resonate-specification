@@ -1,0 +1,17 @@
+{
+  "name": "τ-resume--outcome--buffered",
+  "witness": "τ-resume/outcome/buffered",
+  "covers": [
+    "P-02/birth/born-live-untargeted",
+    "P-02/branch/created",
+    "P-03/branch/settled",
+    "P-04/callback/registered",
+    "T-02/branch/born-live-acquired",
+    "τ-resume/outcome/buffered"
+  ],
+  "from": "template: a callback registered by promise.register_callback, drained",
+  "steps": 4,
+  "taus": 1,
+  "expectedOutbox": [],
+  "tier": "both"
+}

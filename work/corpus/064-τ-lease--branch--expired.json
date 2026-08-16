@@ -1,0 +1,13 @@
+{
+  "name": "τ-lease--branch--expired",
+  "witness": "τ-lease/branch/expired",
+  "covers": [
+    "T-02/branch/born-live-acquired",
+    "τ-lease/branch/expired"
+  ],
+  "from": "template: lease expiry returns the task",
+  "steps": 1,
+  "taus": 1,
+  "expectedOutbox": [],
+  "tier": "both"
+}

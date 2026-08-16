@@ -1,4 +1,0 @@
-{"kind":"task.create","now":1000,"req":{"pid":"p0","ttl":800,"action":{"kind":"promise.create","head":{},"data":{"id":"o.x","timeoutAt":9000,"param":{},"tags":{"resonate:origin":"o","resonate:target":"poll://any@w1"}}}},"res":{"kind":"task.create","head":{"status":200},"data":{"promise":{"id":"o.x","state":"pending","param":{},"value":{},"tags":{"resonate:origin":"o","resonate:target":"poll://any@w1"},"timeoutAt":9000,"createdAt":1000},"task":{"id":"o.x","state":"acquired","version":1,"resumes":0,"ttl":800,"pid":"p0"}}}}
-{"kind":"task.halt","now":1050,"req":{"id":"o.x"},"res":{"kind":"task.halt","head":{"status":200},"data":{}}}
-{"kind":"task.continue","now":1060,"req":{"id":"o.x"},"res":{"kind":"task.continue","head":{"status":200},"data":{}}}
-{"kind":"task.continue","now":1070,"req":{"id":"o.x"},"res":{"kind":"task.continue","head":{"status":409},"data":{}}}

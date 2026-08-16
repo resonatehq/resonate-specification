@@ -1,0 +1,12 @@
+{
+  "name": "P-03--branch--unsettable",
+  "witness": "P-03/branch/unsettable",
+  "covers": [
+    "P-03/branch/unsettable"
+  ],
+  "from": "template: settlement refusals",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

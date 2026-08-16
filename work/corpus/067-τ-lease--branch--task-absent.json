@@ -1,0 +1,12 @@
+{
+  "name": "τ-lease--branch--task-absent",
+  "witness": "τ-lease/branch/task-absent",
+  "covers": [
+    "τ-lease/branch/task-absent"
+  ],
+  "from": "template: τ no-ops: nothing is armed",
+  "steps": 0,
+  "taus": 1,
+  "expectedOutbox": [],
+  "tier": "driven"
+}

@@ -1,0 +1,12 @@
+{
+  "name": "P-02--branch--timer-targeted",
+  "witness": "P-02/branch/timer-targeted",
+  "covers": [
+    "P-02/branch/timer-targeted"
+  ],
+  "from": "template: a timer is never targeted",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

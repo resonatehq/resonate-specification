@@ -1,1 +1,0 @@
-{"kind":"promise.settle","now":1030,"req":{"id":"o.ghost","state":"resolved","value":{}},"res":{"kind":"promise.settle","head":{"status":404},"data":{}}}

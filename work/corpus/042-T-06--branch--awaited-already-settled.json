@@ -1,0 +1,16 @@
+{
+  "name": "T-06--branch--awaited-already-settled",
+  "witness": "T-06/branch/awaited-already-settled",
+  "covers": [
+    "P-02/birth/born-live-untargeted",
+    "P-02/branch/created",
+    "P-03/branch/settled",
+    "T-02/branch/born-live-acquired",
+    "T-06/branch/awaited-already-settled"
+  ],
+  "from": "template: suspend on a settled awaited is 300",
+  "steps": 4,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

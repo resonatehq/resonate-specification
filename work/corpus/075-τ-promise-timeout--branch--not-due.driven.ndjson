@@ -1,0 +1,3 @@
+{"kind":"promise.create","now":1000,"req":{"id":"o.a","timeoutAt":1500,"param":{},"tags":{"resonate:external":"true","resonate:origin":"o"}},"res":{"kind":"promise.create","head":{"status":200},"data":{"promise":{"id":"o.a","state":"pending","param":{},"value":{},"tags":{"resonate:external":"true","resonate:origin":"o"},"timeoutAt":1500,"createdAt":1000}}}}
+{"kind":"tau.promise_timeout","now":2000,"target":"o.a","effect":"fired"}
+{"kind":"tau.promise_timeout","now":2010,"target":"o.a","effect":"no-op"}

@@ -1,0 +1,13 @@
+{
+  "name": "τ-lease--branch--not-due",
+  "witness": "τ-lease/branch/not-due",
+  "covers": [
+    "T-02/branch/born-live-acquired",
+    "τ-lease/branch/not-due"
+  ],
+  "from": "template: lease expiry is a no-op while the lease holds",
+  "steps": 1,
+  "taus": 1,
+  "expectedOutbox": [],
+  "tier": "both"
+}

@@ -1,2 +1,0 @@
-{"kind":"promise.create","now":42498,"req":{"id":"o.a0","timeoutAt":31007,"param":{},"tags":{"resonate:external":"true","resonate:origin":"o"}},"res":{"kind":"promise.create","head":{"status":200},"data":{"promise":{"id":"o.a0","state":"rejected_timedout","param":{},"value":{},"tags":{"resonate:external":"true","resonate:origin":"o"},"timeoutAt":31007,"createdAt":31007,"settledAt":31007}}}}
-{"kind":"task.continue","now":42578,"req":{"id":"o.a0"},"res":{"kind":"task.continue","head":{"status":404},"data":{}}}

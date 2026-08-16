@@ -1,0 +1,13 @@
+{
+  "name": "P-02--birth--born-live-targeted",
+  "witness": "P-02/birth/born-live-targeted",
+  "covers": [
+    "P-02/birth/born-live-targeted",
+    "P-02/branch/created"
+  ],
+  "from": "template: retry re-dispatches a pending task",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

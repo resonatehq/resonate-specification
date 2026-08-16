@@ -1,0 +1,12 @@
+{
+  "name": "T-06--branch--task-absent",
+  "witness": "T-06/branch/task-absent",
+  "covers": [
+    "T-06/branch/task-absent"
+  ],
+  "from": "template: suspend refusals",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

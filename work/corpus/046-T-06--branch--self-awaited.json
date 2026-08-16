@@ -1,0 +1,12 @@
+{
+  "name": "T-06--branch--self-awaited",
+  "witness": "T-06/branch/self-awaited",
+  "covers": [
+    "T-06/branch/self-awaited"
+  ],
+  "from": "template: suspend refusals",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

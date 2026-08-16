@@ -1,0 +1,12 @@
+{
+  "name": "P-05--branch--bad-address",
+  "witness": "P-05/branch/bad-address",
+  "covers": [
+    "P-05/branch/bad-address"
+  ],
+  "from": "template: listeners",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

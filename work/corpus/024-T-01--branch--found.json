@@ -1,0 +1,13 @@
+{
+  "name": "T-01--branch--found",
+  "witness": "T-01/branch/found",
+  "covers": [
+    "T-01/branch/found",
+    "T-02/branch/born-live-acquired"
+  ],
+  "from": "template: heartbeat on a dead promise",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

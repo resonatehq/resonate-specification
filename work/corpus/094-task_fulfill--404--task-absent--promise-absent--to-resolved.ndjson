@@ -1,1 +1,0 @@
-{"kind":"task.fulfill","now":1030,"req":{"id":"o.ghost","version":1,"action":{"kind":"promise.settle","head":{},"data":{"id":"o.ghost","state":"resolved","value":{}}}},"res":{"kind":"task.fulfill","head":{"status":404},"data":{}}}

@@ -1,0 +1,13 @@
+{
+  "name": "τ-lease--branch--promise-not-live",
+  "witness": "τ-lease/branch/promise-not-live",
+  "covers": [
+    "T-02/branch/born-live-acquired",
+    "τ-lease/branch/promise-not-live"
+  ],
+  "from": "search: seed 58",
+  "steps": 1,
+  "taus": 1,
+  "expectedOutbox": [],
+  "tier": "both"
+}

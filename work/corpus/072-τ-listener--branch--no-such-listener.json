@@ -1,0 +1,14 @@
+{
+  "name": "τ-listener--branch--no-such-listener",
+  "witness": "τ-listener/branch/no-such-listener",
+  "covers": [
+    "P-02/birth/born-live-targeted",
+    "P-02/branch/created",
+    "τ-listener/branch/no-such-listener"
+  ],
+  "from": "search: seed 2",
+  "steps": 1,
+  "taus": 1,
+  "expectedOutbox": [],
+  "tier": "both"
+}

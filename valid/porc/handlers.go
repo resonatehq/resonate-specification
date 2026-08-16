@@ -44,8 +44,10 @@ func promiseRes(status int, p *Promise) Response { return Response{Status: statu
 func (s *ServerState) PromiseGet(d Discipline, id string, now uint64) Response {
 	p := s.readPromise(d, id, now)
 	if p == nil {
+		s.note("P-01", "branch", "absent")
 		return Response{Status: 404}
 	}
+	s.note("P-01", "branch", "found")
 	return Response{Status: 200, Promise: p}
 }
 
@@ -58,11 +60,14 @@ type PromiseCreateReq struct {
 
 func (s *ServerState) PromiseCreate(d Discipline, req PromiseCreateReq, now uint64) Response {
 	if req.Tags.TimerTargeted() {
+		s.note("P-02", "branch", "timer-targeted")
 		return Response{Status: 400}
 	}
 	if p := s.readPromise(d, req.ID, now); p != nil {
+		s.note("P-02", "branch", "idempotent-echo")
 		return Response{Status: 200, Promise: p}
 	}
+	s.note("P-02", "branch", "created")
 	if req.TimeoutAt > now {
 		p := &Promise{ID: req.ID, State: Pending, Tags: req.Tags,
 			TimeoutAt: req.TimeoutAt, CreatedAt: now, Param: req.Param}
@@ -76,7 +81,14 @@ func (s *ServerState) PromiseCreate(d Discipline, req PromiseCreateReq, now uint
 					due = n
 				}
 			}
+			if _, ok := p.Tags.Get("resonate:delay"); ok {
+				s.note("P-02", "birth", "born-live-targeted-delayed")
+			} else {
+				s.note("P-02", "birth", "born-live-targeted")
+			}
 			s.SetTask(&Task{ID: p.ID, State: TaskPending, Version: 0, RetryAt: u64p(due)})
+		} else {
+			s.note("P-02", "birth", "born-live-untargeted")
 		}
 		return Response{Status: 200, Promise: p}
 	}
@@ -89,7 +101,13 @@ func (s *ServerState) PromiseCreate(d Discipline, req PromiseCreateReq, now uint
 	p := &Promise{ID: req.ID, State: st, Tags: req.Tags, TimeoutAt: req.TimeoutAt,
 		CreatedAt: req.TimeoutAt, SettledAt: u64p(req.TimeoutAt), Param: req.Param}
 	s.SetPromise(p)
+	if req.Tags.IsTimer() {
+		s.note("P-02", "birth", "born-dead-timer-resolved")
+	} else {
+		s.note("P-02", "birth", "born-dead-rejected-timedout")
+	}
 	if p.Tags.Has("resonate:target") {
+		s.note("P-02", "birth", "born-dead-targeted-task-fulfilled")
 		s.SetTask(&Task{ID: p.ID, State: TaskFulfilled, Version: 0})
 	}
 	return Response{Status: 200, Promise: p}
@@ -97,13 +115,16 @@ func (s *ServerState) PromiseCreate(d Discipline, req PromiseCreateReq, now uint
 
 func (s *ServerState) PromiseSettle(d Discipline, id string, st PromiseState, val json.RawMessage, now uint64) Response {
 	if !st.Settable() {
+		s.note("P-03", "branch", "unsettable")
 		return Response{Status: 400}
 	}
 	p := s.readPromise(d, id, now)
 	if p == nil {
+		s.note("P-03", "branch", "absent")
 		return Response{Status: 404}
 	}
 	if p.State == Pending {
+		s.note("P-03", "branch", "settled")
 		q := p.clone()
 		q.State = st
 		q.SettledAt = u64p(now)
@@ -114,25 +135,31 @@ func (s *ServerState) PromiseSettle(d Discipline, id string, st PromiseState, va
 		s.SetSettled(q)
 		return Response{Status: 200, Promise: q}
 	}
+	s.note("P-03", "branch", "already-settled")
 	return Response{Status: 200, Promise: p}
 }
 
 func (s *ServerState) PromiseRegisterCallback(d Discipline, awaited, awaiter string, now uint64) Response {
 	if awaited == awaiter {
+		s.note("P-04", "branch", "self")
 		return Response{Status: 400}
 	}
 	pa := s.readPromise(d, awaited, now)
 	if pa == nil {
+		s.note("P-04", "branch", "awaited-absent")
 		return Response{Status: 404}
 	}
 	pw := s.readPromise(d, awaiter, now)
 	if pw == nil {
+		s.note("P-04", "branch", "awaiter-absent")
 		return Response{Status: 422}
 	}
 	if !pw.Tags.Has("resonate:target") {
+		s.note("P-04", "branch", "awaiter-untargeted")
 		return Response{Status: 422}
 	}
 	if !pa.External() {
+		s.note("P-04", "branch", "awaited-internal")
 		return Response{Status: 422}
 	}
 	if pa.State == Pending && pw.State == Pending {
@@ -140,8 +167,10 @@ func (s *ServerState) PromiseRegisterCallback(d Discipline, awaited, awaiter str
 		// the awaiter RUNNING, so the drain buffers rather than wakes.
 		s.note("P-04", "callback", "registered")
 		s.SetPromise(pa.AddCallback(awaiter))
+	} else if pa.State != Pending {
+		s.note("P-04", "callback", "awaited-settled")
 	} else {
-		s.note("P-04", "callback", "not-registered")
+		s.note("P-04", "callback", "awaiter-not-live")
 	}
 	return Response{Status: 200, Promise: pa}
 }
@@ -150,21 +179,38 @@ func (s *ServerState) PromiseRegisterCallback(d Discipline, awaited, awaiter str
 
 func (s *ServerState) TaskGet(d Discipline, id string, now uint64) Response {
 	t, p := s.readTask(d, id, now)
-	if t == nil || p == nil {
+	if t == nil {
+		s.note("T-01", "branch", "task-absent")
 		return Response{Status: 404}
 	}
+	if p == nil {
+		s.note("T-01", "branch", "promise-absent")
+		return Response{Status: 404}
+	}
+	s.note("T-01", "branch", "found")
 	return Response{Status: 200, Task: t}
 }
 
 func (s *ServerState) TaskAcquire(d Discipline, id string, version uint64, pid string, ttl uint64, now uint64) Response {
 	t, p := s.readTask(d, id, now)
 	if t == nil {
+		s.note("T-03", "branch", "task-absent")
 		return Response{Status: 404}
 	}
 	if p == nil {
+		s.note("T-03", "branch", "promise-absent")
 		return Response{Status: 409}
 	}
-	if t.State != TaskPending || p.State != Pending || t.Version != version {
+	if t.State != TaskPending {
+		s.note("T-03", "branch", "task-wrong-state")
+		return Response{Status: 409}
+	}
+	if p.State != Pending {
+		s.note("T-03", "branch", "promise-not-live")
+		return Response{Status: 409}
+	}
+	if t.Version != version {
+		s.note("T-03", "branch", "version-mismatch")
 		return Response{Status: 409}
 	}
 	u := t.clone()
@@ -173,6 +219,7 @@ func (s *ServerState) TaskAcquire(d Discipline, id string, version uint64, pid s
 	u.TTL, u.PID = u64p(ttl), strp(pid)
 	u.ExpiresAt = u64p(now + ttl)
 	u.RetryAt, u.Resumes = nil, nil
+	s.note("T-03", "branch", "acquired")
 	s.SetTask(u)
 	// `taskAcquire` returns BOTH records in the Lean —
 	// `{ status, task := some t.toRecord, promise := some p.toRecord }` —
@@ -185,23 +232,40 @@ func (s *ServerState) TaskAcquire(d Discipline, id string, version uint64, pid s
 // than sleep.
 func (s *ServerState) TaskSuspend(d Discipline, id string, version uint64, awaited []string, now uint64) Response {
 	if len(awaited) == 0 {
+		s.note("T-06", "branch", "empty-actions")
 		return Response{Status: 400}
 	}
 	seen := map[string]bool{}
 	for _, a := range awaited {
-		if a == id || seen[a] {
+		if a == id {
+			s.note("T-06", "branch", "self-awaited")
+			return Response{Status: 400}
+		}
+		if seen[a] {
+			s.note("T-06", "branch", "duplicate-awaited")
 			return Response{Status: 400}
 		}
 		seen[a] = true
 	}
 	t, tp := s.readTask(d, id, now)
 	if t == nil {
+		s.note("T-06", "branch", "task-absent")
 		return Response{Status: 404}
 	}
 	if tp == nil {
+		s.note("T-06", "branch", "promise-absent")
 		return Response{Status: 409}
 	}
-	if t.State != TaskAcquired || tp.State != Pending || t.Version != version {
+	if t.State != TaskAcquired {
+		s.note("T-06", "branch", "task-wrong-state")
+		return Response{Status: 409}
+	}
+	if tp.State != Pending {
+		s.note("T-06", "branch", "promise-not-live")
+		return Response{Status: 409}
+	}
+	if t.Version != version {
+		s.note("T-06", "branch", "version-mismatch")
 		return Response{Status: 409}
 	}
 	// Pass 1: stop at the first undischargeable waiter.
@@ -209,6 +273,7 @@ func (s *ServerState) TaskSuspend(d Discipline, id string, version uint64, await
 	for _, a := range awaited {
 		pa := s.readPromise(d, a, now)
 		if pa == nil || !pa.External() {
+			s.note("T-06", "branch", "awaited-unusable")
 			return Response{Status: 422}
 		}
 		if pa.State != Pending {
@@ -216,11 +281,13 @@ func (s *ServerState) TaskSuspend(d Discipline, id string, version uint64, await
 		}
 	}
 	if anySettled {
+		s.note("T-06", "branch", "awaited-already-settled")
 		u := t.clone()
 		u.Resumes = nil
 		s.SetTask(u)
 		return Response{Status: 300}
 	}
+	s.note("T-06", "branch", "suspended")
 	// Pass 2: park the awaiter on every awaited promise.
 	for _, a := range awaited {
 		if pa := s.readPromise(d, a, now); pa != nil {
@@ -244,12 +311,23 @@ func (s *ServerState) TaskFulfill(d Discipline, id string, version uint64, st Pr
 	}
 	t, p := s.readTask(d, id, now)
 	if t == nil {
+		s.note("T-07", "branch", "task-absent")
 		return Response{Status: 404}
 	}
 	if p == nil {
+		s.note("T-07", "branch", "promise-absent")
 		return Response{Status: 409}
 	}
-	if t.State != TaskAcquired || p.State != Pending || t.Version != version {
+	if t.State != TaskAcquired {
+		s.note("T-07", "branch", "task-wrong-state")
+		return Response{Status: 409}
+	}
+	if p.State != Pending {
+		s.note("T-07", "branch", "promise-not-live")
+		return Response{Status: 409}
+	}
+	if t.Version != version {
+		s.note("T-07", "branch", "version-mismatch")
 		return Response{Status: 409}
 	}
 	q := p.clone()
@@ -258,6 +336,7 @@ func (s *ServerState) TaskFulfill(d Discipline, id string, version uint64, st Pr
 	q.Value = val
 	// The promise and its own task, coupled: this settle fulfils the task
 	// it was issued against, in the same step.
+	s.note("T-07", "branch", "fulfilled")
 	s.SetSettled(q)
 	return Response{Status: 200, Promise: q}
 }
@@ -265,18 +344,30 @@ func (s *ServerState) TaskFulfill(d Discipline, id string, version uint64, st Pr
 func (s *ServerState) TaskRelease(d Discipline, id string, version uint64, now uint64) Response {
 	t, p := s.readTask(d, id, now)
 	if t == nil {
+		s.note("T-08", "branch", "task-absent")
 		return Response{Status: 404}
 	}
 	if p == nil {
+		s.note("T-08", "branch", "promise-absent")
 		return Response{Status: 409}
 	}
-	if t.State != TaskAcquired || p.State != Pending || t.Version != version {
+	if t.State != TaskAcquired {
+		s.note("T-08", "branch", "task-wrong-state")
+		return Response{Status: 409}
+	}
+	if p.State != Pending {
+		s.note("T-08", "branch", "promise-not-live")
+		return Response{Status: 409}
+	}
+	if t.Version != version {
+		s.note("T-08", "branch", "version-mismatch")
 		return Response{Status: 409}
 	}
 	u := t.clone()
 	u.State = TaskPending
 	u.PID, u.TTL, u.ExpiresAt = nil, nil, nil
 	u.RetryAt = u64p(now)
+	s.note("T-08", "branch", "released")
 	s.SetTask(u)
 	return Response{Status: 200}
 }
@@ -304,10 +395,12 @@ func (s *ServerState) TaskHeartbeat(d Discipline, pid string, refs []TaskRef, no
 	for _, ref := range refs {
 		t, p := s.readTask(d, ref.ID, now)
 		if t == nil || p == nil {
+			s.note("T-05", "branch", "task-absent")
 			continue
 		}
 		if t.State == TaskAcquired && t.Version == ref.Version &&
 			t.PID != nil && *t.PID == pid && p.State == Pending {
+			s.note("T-05", "branch", "lease-extended")
 			u := t.clone()
 			ttl := uint64(0)
 			if t.TTL != nil {
@@ -315,6 +408,8 @@ func (s *ServerState) TaskHeartbeat(d Discipline, pid string, refs []TaskRef, no
 			}
 			u.ExpiresAt = u64p(now + ttl)
 			s.SetTask(u)
+		} else {
+			s.note("T-05", "branch", "refused")
 		}
 	}
 	return Response{Status: 200}
@@ -343,17 +438,23 @@ func parseNat(s string) uint64 {
 // listener, so R3 `notify` was unreachable and therefore untested.
 func (s *ServerState) PromiseRegisterListener(d Discipline, awaited, address string, now uint64) Response {
 	if !addressValid(address) {
+		s.note("P-05", "branch", "bad-address")
 		return Response{Status: 400}
 	}
 	pa := s.readPromise(d, awaited, now)
 	if pa == nil {
+		s.note("P-05", "branch", "awaited-absent")
 		return Response{Status: 404}
 	}
 	if !pa.External() {
+		s.note("P-05", "branch", "awaited-internal")
 		return Response{Status: 422}
 	}
 	if pa.State == Pending {
+		s.note("P-05", "branch", "registered")
 		s.SetPromise(pa.AddListener(address))
+	} else {
+		s.note("P-05", "branch", "awaited-settled")
 	}
 	return Response{Status: 200, Promise: pa}
 }
@@ -366,15 +467,23 @@ func addressValid(a string) bool {
 
 func (s *ServerState) TaskHalt(d Discipline, id string, now uint64) Response {
 	t, p := s.readTask(d, id, now)
-	if t == nil || p == nil {
+	if t == nil {
+		s.note("T-09", "branch", "task-absent")
+		return Response{Status: 404}
+	}
+	if p == nil {
+		s.note("T-09", "branch", "promise-absent")
 		return Response{Status: 404}
 	}
 	if t.State == TaskFulfilled {
+		s.note("T-09", "branch", "already-fulfilled")
 		return Response{Status: 409}
 	}
 	if t.State == TaskHalted {
+		s.note("T-09", "branch", "already-halted")
 		return Response{Status: 200}
 	}
+	s.note("T-09", "branch", "halted")
 	u := t.clone()
 	u.State = TaskHalted
 	u.PID, u.TTL, u.ExpiresAt, u.RetryAt = nil, nil, nil, nil
@@ -385,17 +494,22 @@ func (s *ServerState) TaskHalt(d Discipline, id string, now uint64) Response {
 func (s *ServerState) TaskContinue(d Discipline, id string, now uint64) Response {
 	t, p := s.readTask(d, id, now)
 	if t == nil {
+		s.note("T-10", "branch", "task-absent")
 		return Response{Status: 404}
 	}
 	if t.State != TaskHalted {
+		s.note("T-10", "branch", "not-halted")
 		return Response{Status: 409}
 	}
 	if p == nil {
+		s.note("T-10", "branch", "promise-absent")
 		return Response{Status: 404}
 	}
 	if p.State != Pending {
+		s.note("T-10", "branch", "promise-not-live")
 		return Response{Status: 409}
 	}
+	s.note("T-10", "branch", "continued")
 	u := t.clone()
 	u.State = TaskPending
 	u.RetryAt = u64p(now)
@@ -440,23 +554,37 @@ type InnerResponse struct {
 // describe.
 func (s *ServerState) TaskFence(d Discipline, id string, version uint64, act FenceAction, now uint64) (Response, *InnerResponse) {
 	if act.TargetID() == id {
+		s.note("T-04", "branch", "self-target")
 		return Response{Status: 400}, nil
 	}
 	t, p := s.readTask(d, id, now)
 	if t == nil {
+		s.note("T-04", "branch", "task-absent")
 		return Response{Status: 404}, nil
 	}
 	if p == nil {
+		s.note("T-04", "branch", "promise-absent")
 		return Response{Status: 409}, nil
 	}
-	if t.State != TaskAcquired || p.State != Pending || t.Version != version {
+	if t.State != TaskAcquired {
+		s.note("T-04", "branch", "task-wrong-state")
+		return Response{Status: 409}, nil
+	}
+	if p.State != Pending {
+		s.note("T-04", "branch", "promise-not-live")
+		return Response{Status: 409}, nil
+	}
+	if t.Version != version {
+		s.note("T-04", "branch", "version-mismatch")
 		return Response{Status: 409}, nil
 	}
 	switch act.Kind {
 	case "promise.create":
+		s.note("T-04", "branch", "fenced-create")
 		r := s.PromiseCreate(d, PromiseCreateReq{act.ID, act.TimeoutAt, act.Tags, act.Param}, now)
 		return Response{Status: 200}, &InnerResponse{act.Kind, r.Status, r.Promise}
 	case "promise.settle":
+		s.note("T-04", "branch", "fenced-settle")
 		r := s.PromiseSettle(d, act.ID, act.State, act.Value, now)
 		return Response{Status: 200}, &InnerResponse{act.Kind, r.Status, r.Promise}
 	}
@@ -476,6 +604,7 @@ func (s *ServerState) TaskFence(d Discipline, id string, version uint64, act Fen
 // `resonate:target` is 400 before existence is consulted.
 func (s *ServerState) TaskCreate(d Discipline, pid string, ttl uint64, act PromiseCreateReq, now uint64) Response {
 	if !act.Tags.Has("resonate:target") || act.Tags.TimerTargeted() {
+		s.note("T-02", "branch", "malformed-action")
 		return Response{Status: 400}
 	}
 	p := s.readPromise(d, act.ID, now)
@@ -486,6 +615,7 @@ func (s *ServerState) TaskCreate(d Discipline, pid string, ttl uint64, act Promi
 			s.SetPromise(np)
 			nt := &Task{ID: np.ID, State: TaskAcquired, Version: 1,
 				TTL: u64p(ttl), PID: strp(pid), ExpiresAt: u64p(now + ttl)}
+			s.note("T-02", "branch", "born-live-acquired")
 			s.SetTask(nt)
 			return Response{Status: 200, Task: nt, Promise: np}
 		}
@@ -495,20 +625,25 @@ func (s *ServerState) TaskCreate(d Discipline, pid string, ttl uint64, act Promi
 			CreatedAt: act.TimeoutAt, SettledAt: u64p(act.TimeoutAt), Param: act.Param}
 		s.SetPromise(np)
 		nt := &Task{ID: np.ID, State: TaskFulfilled, Version: 0}
+		s.note("T-02", "branch", "born-dead-fulfilled")
 		s.SetTask(nt)
 		return Response{Status: 200, Task: nt, Promise: np}
 	}
 	if !p.Tags.Has("resonate:target") {
+		s.note("T-02", "branch", "promise-untargeted")
 		return Response{Status: 422}
 	}
 	t, tp := s.readTask(d, p.ID, now)
 	if t == nil || tp == nil {
+		s.note("T-02", "branch", "task-absent")
 		return Response{Status: 409}
 	}
 	switch t.State {
 	case TaskFulfilled:
+		s.note("T-02", "branch", "already-fulfilled")
 		return Response{Status: 200, Task: t, Promise: tp}
 	case TaskPending:
+		s.note("T-02", "branch", "reacquired")
 		u := t.clone()
 		u.State = TaskAcquired
 		u.Version = t.Version + 1
@@ -518,6 +653,7 @@ func (s *ServerState) TaskCreate(d Discipline, pid string, ttl uint64, act Promi
 		s.SetTask(u)
 		return Response{Status: 200, Task: u, Promise: tp}
 	default:
+		s.note("T-02", "branch", "task-not-pending")
 		return Response{Status: 409}
 	}
 }

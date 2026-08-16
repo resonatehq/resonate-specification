@@ -1,0 +1,18 @@
+{
+  "name": "τ-resume--outcome--fulfilled",
+  "witness": "τ-resume/outcome/fulfilled",
+  "covers": [
+    "P-02/birth/born-live-untargeted",
+    "P-02/branch/created",
+    "P-03/branch/settled",
+    "T-02/branch/born-live-acquired",
+    "T-06/branch/suspended",
+    "T-06/callback/registered",
+    "τ-resume/outcome/fulfilled"
+  ],
+  "from": "template: a suspended task whose own promise is settled under it",
+  "steps": 5,
+  "taus": 1,
+  "expectedOutbox": [],
+  "tier": "both"
+}

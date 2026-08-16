@@ -1,0 +1,14 @@
+{
+  "name": "τ-listener--branch--awaited-pending",
+  "witness": "τ-listener/branch/awaited-pending",
+  "covers": [
+    "P-02/birth/born-live-untargeted",
+    "P-02/branch/created",
+    "τ-listener/branch/awaited-pending"
+  ],
+  "from": "template: τ no-ops: nothing is armed",
+  "steps": 1,
+  "taus": 1,
+  "expectedOutbox": [],
+  "tier": "both"
+}

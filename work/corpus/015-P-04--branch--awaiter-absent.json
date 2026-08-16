@@ -1,0 +1,14 @@
+{
+  "name": "P-04--branch--awaiter-absent",
+  "witness": "P-04/branch/awaiter-absent",
+  "covers": [
+    "P-02/birth/born-live-untargeted",
+    "P-02/branch/created",
+    "P-04/branch/awaiter-absent"
+  ],
+  "from": "template: callbacks",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

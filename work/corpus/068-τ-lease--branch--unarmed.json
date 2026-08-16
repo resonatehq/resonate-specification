@@ -1,0 +1,15 @@
+{
+  "name": "τ-lease--branch--unarmed",
+  "witness": "τ-lease/branch/unarmed",
+  "covers": [
+    "P-02/birth/born-dead-rejected-timedout",
+    "P-02/birth/born-dead-targeted-task-fulfilled",
+    "P-02/branch/created",
+    "τ-lease/branch/unarmed"
+  ],
+  "from": "search: seed 0",
+  "steps": 1,
+  "taus": 1,
+  "expectedOutbox": [],
+  "tier": "both"
+}

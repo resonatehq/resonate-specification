@@ -1,0 +1,14 @@
+{
+  "name": "T-04--branch--task-wrong-state",
+  "witness": "T-04/branch/task-wrong-state",
+  "covers": [
+    "T-02/branch/born-live-acquired",
+    "T-04/branch/task-wrong-state",
+    "T-08/branch/released"
+  ],
+  "from": "template: fencing",
+  "steps": 3,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

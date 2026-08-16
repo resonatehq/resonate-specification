@@ -1,0 +1,14 @@
+{
+  "name": "P-05--branch--awaited-internal",
+  "witness": "P-05/branch/awaited-internal",
+  "covers": [
+    "P-02/birth/born-live-untargeted",
+    "P-02/branch/created",
+    "P-05/branch/awaited-internal"
+  ],
+  "from": "template: listeners",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

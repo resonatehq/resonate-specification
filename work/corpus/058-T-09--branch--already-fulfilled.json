@@ -1,0 +1,13 @@
+{
+  "name": "T-09--branch--already-fulfilled",
+  "witness": "T-09/branch/already-fulfilled",
+  "covers": [
+    "T-02/branch/born-live-acquired",
+    "T-09/branch/already-fulfilled"
+  ],
+  "from": "template: halt and continue on a dead promise",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

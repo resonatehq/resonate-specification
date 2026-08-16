@@ -1,0 +1,12 @@
+{
+  "name": "P-05--branch--awaited-absent",
+  "witness": "P-05/branch/awaited-absent",
+  "covers": [
+    "P-05/branch/awaited-absent"
+  ],
+  "from": "template: listeners",
+  "steps": 1,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}

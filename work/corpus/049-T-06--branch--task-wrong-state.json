@@ -1,0 +1,15 @@
+{
+  "name": "T-06--branch--task-wrong-state",
+  "witness": "T-06/branch/task-wrong-state",
+  "covers": [
+    "P-02/birth/born-dead-rejected-timedout",
+    "P-02/birth/born-dead-targeted-task-fulfilled",
+    "P-02/branch/created",
+    "T-06/branch/task-wrong-state"
+  ],
+  "from": "search: seed 4",
+  "steps": 2,
+  "taus": 0,
+  "expectedOutbox": [],
+  "tier": "both"
+}
