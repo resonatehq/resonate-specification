@@ -29,6 +29,15 @@ lean_lib «theorems» where
   roots  := #[]
   globs  := #[.submodules `«04-theorems»]
 
+/-- Executable test cases, in a framework that reads as pseudocode: the
+    artifact an implementer ports. `cases_all_pass` checks every one
+    against the specification under kernel `decide`. -/
+@[default_target]
+lean_lib «tests» where
+  srcDir := "spec"
+  roots  := #[]
+  globs  := #[.submodules `«05-tests»]
+
 /-- The trace checker. -/
 @[default_target]
 lean_lib «valid» where

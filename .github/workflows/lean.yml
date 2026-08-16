@@ -58,5 +58,8 @@ jobs:
       - name: lake build theorems
         run: lake build theorems
 
+      - name: lake build tests
+        run: lake build tests
+
       - name: lake build valid
         run: lake build valid
