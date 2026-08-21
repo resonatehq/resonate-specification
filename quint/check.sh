@@ -29,14 +29,14 @@ sim() {  # sim <file> <invariant> <expect: hold|fail> [samples]
 }
 
 echo "== types =="
-for m in requests abstractAction concrete trans refine witnesses; do
+for m in requests abstract concrete trans refine witnesses; do
     quint typecheck $m.qnt || exit 1
 done
 echo "  ok"
 
 if [ "${1:-run}" = "verify" ]; then
     echo "== the protocol, exhaustive to depth $STEPS =="
-    quint verify abstractAction.qnt --invariant=allInvariants --max-steps="$STEPS"
+    quint verify abstract.qnt --invariant=allInvariants --max-steps="$STEPS"
     quint verify trans.qnt --invariant=allStepProperties --max-steps="$STEPS"
     exit $?
 fi
@@ -49,7 +49,7 @@ quint test concrete.qnt || exit 1
 quint test refine.qnt   || exit 1
 
 echo "== the protocol =="
-sim abstractAction.qnt allInvariants     hold || exit 1
+sim abstract.qnt allInvariants     hold || exit 1
 sim trans.qnt          allStepProperties hold || exit 1
 
 echo "== the executor =="

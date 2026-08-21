@@ -5,14 +5,14 @@ Two machines and the question between them.
 | | |
 |---|---|
 | `requests.qnt` | the vocabulary: what an object is, what a request is, which events exist. Decides nothing. |
-| `abstractAction.qnt` | THE PROTOCOL. One request, one transition. |
+| `abstract.qnt` | THE PROTOCOL. One request, one transition. |
 | `concrete.qnt` | THE EXECUTOR. One document per origin, and a compare-and-swap on it. |
 | `refine.qnt` | does the executor refine the protocol? |
 | `trans.qnt` | the four properties that are about a PAIR of states |
 | `witnesses.qnt` | the states the machines had better be able to reach |
 | `check.sh` | types, the written-down traces, then simulation |
 
-`abstractAction.qnt` is `tla/AbstractAction.tla`, `concrete.qnt` is
+`abstract.qnt` is `tla/AbstractAction.tla`, `concrete.qnt` is
 `tla/Concrete.tla`, and `refine.qnt` is `tla/RefineAction.tla` — same protocol,
 same alphabet, same handlers, same invariants, same model.
 

@@ -8,7 +8,7 @@
 /// each other.
 ///
 /// The Quint reading of `tla/AbstractAction.tla`.
-module abstractAction {
+module abstract {
   import requests.* from "./requests"
 
   /// The whole of the abstract state. `objects` is partial: the keys are what

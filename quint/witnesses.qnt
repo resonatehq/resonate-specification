@@ -4,7 +4,7 @@
 /// zero is a handler that is never enabled.
 module witnesses {
   import requests.* from "./requests"
-  import abstractAction.* from "./abstractAction"
+  import abstract.* from "./abstract"
 
   val wAcquired  = state.stored().exists(o => o.task.state == TaskAcquired)
   val wSuspended = state.stored().exists(o => o.task.state == TaskSuspended)

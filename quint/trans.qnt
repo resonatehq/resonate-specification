@@ -7,13 +7,13 @@
 /// TLA+ writes those as `[][P]_vars` and reads `objects'` inside `P`. Quint has
 /// no primed READ -- a variable may only be primed on the left of an assignment
 /// -- so the previous state is carried in a variable instead. That is the whole
-/// of this module: `abstractAction` is untouched, and `prevObjects` is a
-/// spectator, written by every step and read by nothing the machine does.
+/// of this module: `abstract` is untouched, and `prev` is a spectator, written
+/// by every step and read by nothing the machine does.
 ///
 /// The Quint reading of the `T_*` properties in `tla/AbstractAction.tla`.
 module trans {
   import requests.* from "./requests"
-  import abstractAction as A from "./abstractAction"
+  import abstract as A from "./abstract"
 
   var prev: A::State
 

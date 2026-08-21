@@ -13,7 +13,7 @@
 /// The Quint reading of `tla/RefineAction.tla`.
 module refine {
   import requests.* from "./requests"
-  import abstractAction as A from "./abstractAction"
+  import abstract as A from "./abstract"
   import concrete as C from "./concrete"
 
   /// What the executor's store denotes. The etags, the wheel and the steps in

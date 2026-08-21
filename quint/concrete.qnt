@@ -1,12 +1,12 @@
 /// THE EXECUTOR. The same protocol under the Verus executor's discipline: ONE
 /// DOCUMENT PER ORIGIN, and a compare-and-swap on it.
 ///
-/// `abstractAction` decides and writes in one step. This machine reads a
+/// `abstract` decides and writes in one step. This machine reads a
 /// document, decides against it, and lands the decision later -- so the gap
 /// between the two is a place another step can get into, and the etag is what
 /// keeps a stale decision out.
 ///
-/// THE HANDLERS ARE ITS OWN, ON PURPOSE. Borrowing `abstractAction`'s would
+/// THE HANDLERS ARE ITS OWN, ON PURPOSE. Borrowing `abstract`'s would
 /// make the refinement unaskable: the two machines would agree by construction.
 /// Only the VOCABULARY is shared, through `requests` -- what an object is, what
 /// a request is, which events exist. Same protocol being spoken about, not the
@@ -130,7 +130,7 @@ module concrete {
   //
   // Total functions from a request and a document to the effects it justifies.
   // A request that does not apply justifies nothing, which is how this machine
-  // says what `abstractAction` says with a guard.
+  // says what `abstract` says with a guard.
 
   /// A read is not a write.
   pure def handlePromiseGet(i: Id, env: Env): List[Effect] = nothing

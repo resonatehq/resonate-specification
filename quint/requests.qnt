@@ -3,7 +3,7 @@
 ///
 /// The Quint reading of `tla/Requests.tla`, narrowed to what the abstract
 /// machine actually speaks: the alphabet is not a value here, because
-/// `abstractAction` quantifies over requests directly.
+/// `abstract` quantifies over requests directly.
 module requests {
 
   // ---------------------------------------------------------------- the atoms
@@ -224,7 +224,7 @@ module requests {
 
   // ---------------------------------------------------------------- the alphabet
   //
-  // The events both machines speak. `abstractAction` and `concrete` are two
+  // The events both machines speak. `abstract` and `concrete` are two
   // independent machines, and the refinement asks whether their behaviour lines
   // up -- so they had better be answering the same questions.
 
