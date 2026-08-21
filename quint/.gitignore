@@ -1,0 +1,2 @@
+# Apalache leaves its SMT logs here; `quint verify` writes them per run.
+_apalache-out/
