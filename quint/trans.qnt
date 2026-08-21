@@ -15,20 +15,23 @@ module trans {
   import requests.* from "./requests"
   import abstractAction as A from "./abstractAction"
 
-  var prevObjects: Id -> Object
-  var prevNow: int
+  var prev: A::State
 
   action init = all {
     A::init,
-    prevObjects' = Map(),
-    prevNow'     = 0,
+    prev' = { objects: Map(), outbox: Set(), now: 0 },
   }
 
   action step = all {
     A::step,
-    prevObjects' = A::objects,
-    prevNow'     = A::now,
+    prev' = A::state,
   }
+
+  /// THE MACHINE IS ITS OWN RELATION. `step` fires a handler; `stepsTo` asks
+  /// whether a pair of states is a firing of one. `refine.qnt` asks the second
+  /// question of the executor, so it had better be the same machine as the
+  /// first -- and this is what says so.
+  val own_steps_are_steps = A::stepsTo(prev, A::state)
 
   // -------------------------------------------------------------------------
 
@@ -41,10 +44,10 @@ module trans {
   }
 
   val preserved_settled_promise_record =
-    prevObjects.keys().forall(i => or {
-      prevObjects.get(i).promise.state == Pending,
+    prev.objects.keys().forall(i => or {
+      prev.objects.get(i).promise.state == Pending,
       A::objects.keys().contains(i)
-        and keptSettled(prevObjects.get(i), A::objects.get(i)),
+        and keptSettled(prev.objects.get(i), A::objects.get(i)),
     })
 
   /// A promise that has just appeared has no history: nobody is waiting on it,
@@ -72,8 +75,8 @@ module trans {
 
   val consistent_new_promise_born_clean =
     A::objects.keys().forall(i => or {
-      prevObjects.keys().contains(i),
-      bornClean(A::objects.get(i).promise, prevNow),
+      prev.objects.keys().contains(i),
+      bornClean(A::objects.get(i).promise, prev.now),
     })
 
   /// A promise settles in exactly one of two ways, and the stamp says which:
@@ -95,24 +98,25 @@ module trans {
   }
 
   val consistent_promise_settlement_stamp =
-    prevObjects.keys().forall(i => or {
-      prevObjects.get(i).promise.state != Pending,
+    prev.objects.keys().forall(i => or {
+      prev.objects.get(i).promise.state != Pending,
       A::objects.keys().contains(i)
-        and settlementStamp(prevObjects.get(i).promise,
-                            A::objects.get(i).promise, prevNow),
+        and settlementStamp(prev.objects.get(i).promise,
+                            A::objects.get(i).promise, prev.now),
     })
 
   /// Settling a promise retires its task in the same step. There is no state in
   /// between, because there is no write in between.
   val consistent_settlement_fulfils_task =
-    prevObjects.keys().forall(i => or {
-      prevObjects.get(i).promise.state != Pending,
+    prev.objects.keys().forall(i => or {
+      prev.objects.get(i).promise.state != Pending,
       not(A::objects.keys().contains(i)),
       A::objects.get(i).promise.state == Pending,
       Set(TaskNone, TaskFulfilled).contains(A::objects.get(i).task.state),
     })
 
   val allStepProperties = and {
+    own_steps_are_steps,
     preserved_settled_promise_record,
     consistent_new_promise_born_clean,
     consistent_promise_settlement_stamp,

@@ -1,16 +1,24 @@
-/// THE MACHINE. One request, one transition. Every handler reads the store
-/// through `project` and writes it in one go, so a promise and its task never
-/// disagree and no two requests can get inside each other.
+/// THE MACHINE. One request, one transition. A handler is a PARTIAL FUNCTION
+/// from the store to the store: at most one outcome, and none at all when the
+/// request does not apply. `Next` is then "some event applies", which is what
+/// lets `refine.qnt` ask whether the executor's writes are abstract steps.
+///
+/// Every handler reads the store through `project` and writes it in one go, so
+/// a promise and its task never disagree and no two requests can get inside
+/// each other.
 ///
 /// The Quint reading of `tla/AbstractAction.tla`.
 module abstractAction {
   import requests.* from "./requests"
 
-  var objects: Id -> Object    // partial: the keys are what exists
-  var outbox:  Set[OutEntry]   // at most one entry per MsgKey
-  var now:     int             // the clock. NOT part of the store: a server
-                               // does not own it, so it cannot be asked to
-                               // have noticed the time passing.
+  /// The whole of the abstract state. `objects` is partial: the keys are what
+  /// exists. `now` is NOT part of the store -- a server does not own the clock,
+  /// so it cannot be asked to have noticed the time passing.
+  type State = {
+    objects: Id -> Object,
+    outbox:  Set[OutEntry],    // at most one entry per MsgKey
+    now:     int,
+  }
 
   // ------------------------------------------------------------ record surgery
   //
@@ -91,311 +99,350 @@ module abstractAction {
                else if (alive) { ...noTask, state: TaskPending, retryAt: t }
                else { ...noTask, state: TaskFulfilled } }
 
-  /// The ids that exist.
-  val ids: Set[Id] = objects.keys()
+  // ------------------------------------------------------------- reading state
 
-  /// The store as the protocol sees it: every lapsed deadline already applied.
-  /// Handlers read `live` and write `objects`, and the difference between the
-  /// two is exactly the work the timeout actions have not got to yet.
-  val live: Id -> Object = ids.mapBy(i => project(objects.get(i), now))
+  pure def has(s: State, i: Id): bool = s.objects.keys().contains(i)
 
-  /// Every request handler writes objects and nothing else.
-  action onlyObjects(written: Id -> Object): bool = all {
-    objects' = written, outbox' = outbox, now' = now,
-  }
+  /// The object at `i` as the protocol sees it: the lapsed deadline already
+  /// applied, whether or not anyone has written that down. Every handler reads
+  /// through here, so the difference between `live` and `objects` is exactly
+  /// the work the timeout events have not got to yet.
+  pure def live(s: State, i: Id): Object = project(s.objects.get(i), s.now)
 
-  action objectsAndSend(written: Id -> Object, msg: OutEntry): bool = all {
-    objects' = written, outbox' = outbox.send(msg), now' = now,
-  }
+  pure def write(s: State, i: Id, o: Object): State =
+    { ...s, objects: s.objects.put(i, o) }
+
+  /// A step that does not happen. A request that does not apply is not a
+  /// smaller step, it is no step at all.
+  pure val noStep: Set[State] = Set()
 
   // ---------------------------------------------------------------- promises
 
-  action promiseCreate(req: CreateReq): bool = all {
-    not(ids.contains(req.id)),
-    onlyObjects(objects.put(req.id, new(req, now))),
-  }
+  pure def promiseCreate(s: State, req: CreateReq): Set[State] =
+    if (not(s.has(req.id)))
+      Set(s.write(req.id, new(req, s.now)))
+    else noStep
 
-  action promiseSettle(req: SettleReq): bool =
-    val old = live.get(req.id)
-    all {
-      ids.contains(req.id),
-      old.promise.state == Pending,
-      onlyObjects(objects.put(req.id,
+  pure def promiseSettle(s: State, req: SettleReq): Set[State] =
+    val old = s.live(req.id)
+    if (and { s.has(req.id), old.promise.state == Pending })
+      Set(s.write(req.id,
         { promise: { ...old.promise, state: req.state, value: req.value,
-                     settledAt: now },
-          task:    old.task.settled() })),
-    }
+                     settledAt: s.now },
+          task:    old.task.settled() }))
+    else noStep
 
   /// A promise waits on a promise. Only a targeted promise can be woken, and
   /// only an external promise is worth waiting on -- what settles it is not
   /// this server.
-  action promiseRegisterCallback(req: CallbackReq): bool =
-    val awaited = live.get(req.awaited)
-    val awaiter = live.get(req.awaiter)
-    all {
-      ids.contains(req.awaited),
-      ids.contains(req.awaiter),
+  pure def promiseRegisterCallback(s: State, req: CallbackReq): Set[State] =
+    val awaited = s.live(req.awaited)
+    val awaiter = s.live(req.awaiter)
+    if (and {
+      s.has(req.awaited),
+      s.has(req.awaiter),
       awaiter.promise.tags.targeted,
       isExternal(awaited.promise),
       awaited.promise.state == Pending,
       awaiter.promise.state == Pending,
-      onlyObjects(objects.put(req.awaited, awaited.withCallback(req.awaiter))),
-    }
+    })
+      Set(s.write(req.awaited, awaited.withCallback(req.awaiter)))
+    else noStep
 
   /// An address waits on a promise. Same door, no awaiter.
-  action promiseRegisterListener(req: ListenerReq): bool =
-    val old = live.get(req.awaited)
-    all {
-      ids.contains(req.awaited),
+  pure def promiseRegisterListener(s: State, req: ListenerReq): Set[State] =
+    val old = s.live(req.awaited)
+    if (and {
+      s.has(req.awaited),
       isExternal(old.promise),
       old.promise.state == Pending,
-      onlyObjects(objects.put(req.awaited, old.withListener(req.address))),
-    }
+    })
+      Set(s.write(req.awaited, old.withListener(req.address)))
+    else noStep
 
   // ------------------------------------------------------------------- tasks
 
   /// Create and acquire in one request: either the promise is new -- and the
   /// caller holds its task the moment it exists -- or it is already there and
   /// its task was going begging.
-  action taskCreate(req: TaskCreateReq): bool =
-    val born = new(req.act, now)
-    val old  = live.get(req.act.id)
-    all {
-      req.act.tags.targeted,
-      any {
-        all {
-          not(ids.contains(req.act.id)),
-          onlyObjects(objects.put(req.act.id,
-            if (born.promise.state == Pending)
-              born.withTask(born.task.acquiredBy(req.pid, req.ttl, now))
-            else
-              born)),
-        },
-        all {
-          ids.contains(req.act.id),
-          old.promise.tags.targeted,
-          old.task.state == TaskPending,
-          onlyObjects(objects.put(req.act.id,
-            old.withTask(old.task.acquiredBy(req.pid, req.ttl, now)))),
-        },
-      },
-    }
+  pure def taskCreate(s: State, req: TaskCreateReq): Set[State] =
+    val born = new(req.act, s.now)
+    val old  = s.live(req.act.id)
+    if (not(req.act.tags.targeted))
+      noStep
+    else if (not(s.has(req.act.id)))
+      Set(s.write(req.act.id,
+        if (born.promise.state == Pending)
+          born.withTask(born.task.acquiredBy(req.pid, req.ttl, s.now))
+        else
+          born))
+    else if (and { old.promise.tags.targeted, old.task.state == TaskPending })
+      Set(s.write(req.act.id, old.withTask(old.task.acquiredBy(req.pid, req.ttl, s.now))))
+    else noStep
 
-  action taskAcquire(req: TaskAcquireReq): bool =
-    val old = live.get(req.id)
-    all {
-      ids.contains(req.id),
+  pure def taskAcquire(s: State, req: TaskAcquireReq): Set[State] =
+    val old = s.live(req.id)
+    if (and {
+      s.has(req.id),
       old.task.state == TaskPending,
       old.promise.state == Pending,
       old.task.version == req.version,
-      onlyObjects(objects.put(req.id,
-        old.withTask(old.task.acquiredBy(req.pid, req.ttl, now)))),
-    }
+    })
+      Set(s.write(req.id, old.withTask(old.task.acquiredBy(req.pid, req.ttl, s.now))))
+    else noStep
 
   /// A worker still holding its lease writes SOMEWHERE ELSE. The version it
   /// names is the whole content: a worker whose lease was taken names a
   /// version that no longer exists, and its write does not happen.
-  action taskFence(ref: TaskRef): bool =
-    val old = live.get(ref.id)
-    all {
-      ids.contains(ref.id),
+  pure def taskFence(s: State, req: TaskFenceReq): Set[State] =
+    val old = s.live(req.id)
+    if (and {
+      s.has(req.id),
+      fencedId(req.act) != req.id,
       old.task.state == TaskAcquired,
       old.promise.state == Pending,
-      old.task.version == ref.version,
-      any {
-        nondet req = CreateReqs.oneOf() all { req.id != ref.id, promiseCreate(req) },
-        nondet req = SettleReqs.oneOf() all { req.id != ref.id, promiseSettle(req) },
-      },
-    }
+      old.task.version == req.version,
+    })
+      match req.act {
+        | FenceCreate(r) => promiseCreate(s, r)
+        | FenceSettle(r) => promiseSettle(s, r)
+      }
+    else noStep
 
   /// One request, many leases: a worker renews everything it still holds, and
   /// says nothing about what it does not.
-  action taskHeartbeat(req: TaskBeatReq): bool =
-    val beat = ids.filter(i =>
-      val o = live.get(i)
+  pure def taskHeartbeat(s: State, req: TaskBeatReq): Set[State] =
+    val beat = s.objects.keys().filter(i =>
+      val o = s.live(i)
       and {
         req.tasks.exists(rf => rf.id == i and rf.version == o.task.version),
         o.task.state == TaskAcquired,
         o.task.pid == req.pid,
         o.promise.state == Pending,
       })
-    all {
-      beat != Set(),
-      onlyObjects(beat.fold(objects, (acc, i) =>
-        val o = live.get(i)
-        acc.put(i, o.withTask({ ...o.task, expiresAt: now + o.task.ttl })))),
-    }
+    if (beat != Set())
+      Set(beat.fold(s, (acc, i) =>
+        val o = s.live(i)
+        acc.write(i, o.withTask({ ...o.task, expiresAt: s.now + o.task.ttl }))))
+    else noStep
 
   /// Park a task on the promises it is waiting for, registering itself on each.
   /// If any of them has ALREADY settled there is nothing to wait for: the task
   /// keeps its lease and only its buffered wakeups are cleared, because it is
   /// about to be told.
-  action taskSuspend(req: TaskSuspendReq): bool =
+  pure def taskSuspend(s: State, req: TaskSuspendReq): Set[State] =
     val aw  = req.actions.map(a => a.awaited)
-    val old = live.get(req.id)
-    all {
+    val old = s.live(req.id)
+    if (and {
       req.actions != Set(),
       not(aw.contains(req.id)),
       aw.forall(a => a.origin == req.id.origin),
-      ids.contains(req.id),
-      aw.forall(a => ids.contains(a)),
+      s.has(req.id),
+      aw.forall(a => s.has(a)),
       old.task.state == TaskAcquired,
       old.promise.state == Pending,
       old.task.version == req.version,
-      aw.forall(a => isExternal(live.get(a).promise)),
-      if (aw.exists(a => live.get(a).promise.state != Pending))
-        onlyObjects(objects.put(req.id,
-          old.withTask({ ...old.task, resumes: Set() })))
+      aw.forall(a => isExternal(s.live(a).promise)),
+    })
+      if (aw.exists(a => s.live(a).promise.state != Pending))
+        Set(s.write(req.id, old.withTask({ ...old.task, resumes: Set() })))
       else
-        onlyObjects(aw.fold(
-          objects.put(req.id, old.withTask(old.task.suspended())),
-          (acc, a) => acc.put(a, live.get(a).withCallback(req.id)))),
-    }
+        Set(aw.fold(s.write(req.id, old.withTask(old.task.suspended())),
+                    (acc, a) => acc.write(a, s.live(a).withCallback(req.id))))
+    else noStep
 
   /// Settle the promise and retire the task in one write. This is the only
   /// place a worker gets to say what its promise came to.
-  action taskFulfill(req: TaskFulfillReq): bool =
-    val old = live.get(req.id)
-    all {
-      ids.contains(req.id),
+  pure def taskFulfill(s: State, req: TaskFulfillReq): Set[State] =
+    val old = s.live(req.id)
+    if (and {
+      s.has(req.id),
       old.task.state == TaskAcquired,
       old.promise.state == Pending,
       old.task.version == req.version,
-      onlyObjects(objects.put(req.id,
+    })
+      Set(s.write(req.id,
         { promise: { ...old.promise, state: req.act.state, value: req.act.value,
-                     settledAt: now },
-          task:    old.task.settled() })),
-    }
+                     settledAt: s.now },
+          task:    old.task.settled() }))
+    else noStep
 
   /// Hand it back, due now.
-  action taskRelease(req: TaskRef): bool =
-    val old = live.get(req.id)
-    all {
-      ids.contains(req.id),
+  pure def taskRelease(s: State, req: TaskRef): Set[State] =
+    val old = s.live(req.id)
+    if (and {
+      s.has(req.id),
       old.task.state == TaskAcquired,
       old.promise.state == Pending,
       old.task.version == req.version,
-      onlyObjects(objects.put(req.id, old.withTask(old.task.pendingAt(now)))),
-    }
+    })
+      Set(s.write(req.id, old.withTask(old.task.pendingAt(s.now))))
+    else noStep
 
   /// Stop dispatching this task, without settling its promise. No version:
   /// halting is not the worker's move.
-  action taskHalt(id: Id): bool =
-    val old = live.get(id)
-    all {
-      ids.contains(id),
+  pure def taskHalt(s: State, id: Id): Set[State] =
+    val old = s.live(id)
+    if (and {
+      s.has(id),
       not(Set(TaskNone, TaskFulfilled, TaskHalted).contains(old.task.state)),
-      onlyObjects(objects.put(id, old.withTask(old.task.halted()))),
-    }
+    })
+      Set(s.write(id, old.withTask(old.task.halted())))
+    else noStep
 
-  action taskContinue(id: Id): bool =
-    val old = live.get(id)
-    all {
-      ids.contains(id),
+  pure def taskContinue(s: State, id: Id): Set[State] =
+    val old = s.live(id)
+    if (and {
+      s.has(id),
       old.task.state == TaskHalted,
       old.promise.state == Pending,
-      onlyObjects(objects.put(id, old.withTask(old.task.pendingAt(now)))),
-    }
+    })
+      Set(s.write(id, old.withTask(old.task.pendingAt(s.now))))
+    else noStep
 
   // --------------------------------------------------------------- deadlines
 
   /// Writing down what `project` already says. The lapse is not a decision --
-  /// it happened when the deadline passed -- so this is the ONE action that
+  /// it happened when the deadline passed -- so this is the ONE handler that
   /// reads `objects` raw: it exists to make the store agree with the protocol.
-  action processPromiseTimeout: bool =
-    nondet i = Ids.oneOf()
-    val old = objects.get(i)
-    all {
-      ids.contains(i),
+  pure def promiseTimeout(s: State, i: Id): Set[State] =
+    val old = s.objects.get(i)
+    if (and {
+      s.has(i),
       old.promise.state == Pending,
-      old.promise.timeoutAt <= now,
-      onlyObjects(objects.put(i, project(old, now))),
-    }
+      old.promise.timeoutAt <= s.now,
+    })
+      Set(s.write(i, project(old, s.now)))
+    else noStep
 
   /// The lease ran out. The task goes back on the pile, due now -- the worker
   /// may still be alive and may still write, which is what the version is for.
-  action processLeaseTimeout: bool =
-    nondet i = Ids.oneOf()
-    val old = live.get(i)
-    all {
-      ids.contains(i),
+  pure def leaseTimeout(s: State, i: Id): Set[State] =
+    val old = s.live(i)
+    if (and {
+      s.has(i),
       old.task.state == TaskAcquired,
       old.task.expiresAt != NoTime,
-      old.task.expiresAt <= now,
+      old.task.expiresAt <= s.now,
       old.promise.state == Pending,
-      onlyObjects(objects.put(i, old.withTask(old.task.pendingAt(now)))),
-    }
+    })
+      Set(s.write(i, old.withTask(old.task.pendingAt(s.now))))
+    else noStep
 
   /// Dispatch, and arm the next attempt. The message names the version, so a
   /// worker can tell whether the task it was handed is still the task it has.
-  action processRetryTimeout: bool =
-    nondet i = Ids.oneOf()
-    val old = live.get(i)
+  pure def retryTimeout(s: State, i: Id): Set[State] =
+    val old = s.live(i)
     val msg = { address: old.promise.tags.target,
                 message: Execute({ id: i, version: old.task.version }) }
-    all {
-      ids.contains(i),
+    if (and {
+      s.has(i),
       old.task.state == TaskPending,
       old.task.retryAt != NoTime,
-      old.task.retryAt <= now,
+      old.task.retryAt <= s.now,
       old.promise.state == Pending,
-      objectsAndSend(objects.put(i,
-        old.withTask({ ...old.task, retryAt: now + RetryTimeout })), msg),
-    }
+    })
+      Set({ ...s.write(i, old.withTask({ ...old.task, retryAt: s.now + RetryTimeout })),
+            outbox: s.outbox.send(msg) })
+    else noStep
 
   // ----------------------------------------------------------- settling news
 
   /// Tell an address, once, and forget it.
-  action processListener: bool =
-    nondet i = Ids.oneOf()
-    nondet a = Addresses.oneOf()
-    val awaited = live.get(i)
-    val msg = { address: a,
-                message: Unblock({ id: i, state: awaited.promise.state }) }
-    all {
-      ids.contains(i),
-      awaited.promise.listeners.contains(a),
+  pure def listenerDrain(s: State, req: ListenerDrainReq): Set[State] =
+    val awaited = s.live(req.id)
+    val msg = { address: req.address,
+                message: Unblock({ id: req.id, state: awaited.promise.state }) }
+    if (and {
+      s.has(req.id),
+      awaited.promise.listeners.contains(req.address),
       awaited.promise.state != Pending,
-      objectsAndSend(objects.put(i, awaited.withoutListener(a)), msg),
-    }
+    })
+      Set({ ...s.write(req.id, awaited.withoutListener(req.address)),
+            outbox: s.outbox.send(msg) })
+    else noStep
 
   /// Tell an awaiter, once. A suspended awaiter wakes up and is due now; a
   /// running one only has the news buffered, because it is not parked and
   /// waking it would mean nothing; and one that is gone or finished is simply
   /// struck off.
-  action processCallback: bool =
-    nondet i = Ids.oneOf()
-    nondet w = Ids.oneOf()
-    val awaited = live.get(i)
-    val awaiter = live.get(w)
-    val struck  = objects.put(i, awaited.withoutCallback(w))
-    all {
-      ids.contains(i),
-      awaited.promise.callbacks.contains(w),
+  pure def callbackDrain(s: State, req: CallbackDrainReq): Set[State] =
+    val awaited = s.live(req.id)
+    val awaiter = s.live(req.awaiter)
+    val struck  = s.write(req.id, awaited.withoutCallback(req.awaiter))
+    if (and {
+      s.has(req.id),
+      awaited.promise.callbacks.contains(req.awaiter),
       awaited.promise.state != Pending,
-      onlyObjects(
-        if (not(ids.contains(w)))
-          struck
-        else if (Set(TaskNone, TaskFulfilled).contains(awaiter.task.state))
-          struck
-        else if (awaiter.task.state == TaskSuspended)
-          struck.put(w, awaiter.withTask(
-            { ...awaiter.task.pendingAt(now), resumes: Set(i) }))
-        else
-          struck.put(w, awaiter.withTask(
-            { ...awaiter.task, resumes: awaiter.task.resumes.union(Set(i)) }))),
-    }
+    })
+      if (not(s.has(req.awaiter)))
+        Set(struck)
+      else if (Set(TaskNone, TaskFulfilled).contains(awaiter.task.state))
+        Set(struck)
+      else if (awaiter.task.state == TaskSuspended)
+        Set(struck.write(req.awaiter, awaiter.withTask(
+          { ...awaiter.task.pendingAt(s.now), resumes: Set(req.id) })))
+      else
+        Set(struck.write(req.awaiter, awaiter.withTask(
+          { ...awaiter.task, resumes: awaiter.task.resumes.union(Set(req.id)) })))
+    else noStep
 
   // --------------------------------------------------------------- the clock
 
-  action clock: bool = all {
-    now < MaxTime,
-    now' = now + 1,
-    objects' = objects,
-    outbox'  = outbox,
+  pure def tick(s: State): Set[State] =
+    if (s.now < MaxTime) Set({ ...s, now: s.now + 1 }) else noStep
+
+  // ------------------------------------------------------------- the alphabet
+
+  /// What one event does to the store. A read is not a transition, so the two
+  /// gets are no abstract step at all.
+  pure def fire(s: State, e: Event): Set[State] =
+    match e {
+      | PromiseGet(_)                => noStep
+      | TaskGet(_)                   => noStep
+      | PromiseCreate(req)           => promiseCreate(s, req)
+      | PromiseSettle(req)           => promiseSettle(s, req)
+      | PromiseRegisterCallback(req) => promiseRegisterCallback(s, req)
+      | PromiseRegisterListener(req) => promiseRegisterListener(s, req)
+      | TaskCreate(req)              => taskCreate(s, req)
+      | TaskAcquire(req)             => taskAcquire(s, req)
+      | TaskFence(req)               => taskFence(s, req)
+      | TaskHeartbeat(req)           => taskHeartbeat(s, req)
+      | TaskSuspend(req)             => taskSuspend(s, req)
+      | TaskFulfill(req)             => taskFulfill(s, req)
+      | TaskRelease(req)             => taskRelease(s, req)
+      | TaskHalt(id)                 => taskHalt(s, id)
+      | TaskContinue(id)             => taskContinue(s, id)
+      | Timeout(req)                 =>
+          match req.kind {
+            | PromiseDeadline => promiseTimeout(s, req.id)
+            | LeaseDeadline   => leaseTimeout(s, req.id)
+            | RetryDeadline   => retryTimeout(s, req.id)
+          }
+      | ListenerDrain(req)           => listenerDrain(s, req)
+      | CallbackDrain(req)           => callbackDrain(s, req)
+    }
+
+  /// `[Next]_vars`, as a relation: one event applies, or nothing moves. This is
+  /// what a lower machine has to satisfy at every one of its transitions to be
+  /// an implementation of this one.
+  pure def stepsTo(before: State, after: State): bool = or {
+    before == after,
+    tick(before).contains(after),
+    Events.exists(e => fire(before, e).contains(after)),
   }
 
   // --------------------------------------------------------------- the machine
+
+  var objects: Id -> Object
+  var outbox:  Set[OutEntry]
+  var now:     int
+
+  val state: State = { objects: objects, outbox: outbox, now: now }
+
+  action land(s: State): bool = all {
+    objects' = s.objects, outbox' = s.outbox, now' = s.now,
+  }
 
   action init = all {
     objects' = Map(),
@@ -403,99 +450,122 @@ module abstractAction {
     now'     = 0,
   }
 
+  /// Take the one outcome, when there is one.
+  action fireOne(outs: Set[State]): bool = all {
+    outs != Set(),
+    nondet s2 = outs.oneOf()
+    land(s2),
+  }
+
+  action clock = all {
+    now < MaxTime,
+    now' = now + 1,
+    objects' = objects,
+    outbox'  = outbox,
+  }
+
+  /// `Next`. One request applies, or the clock moves.
   action step = any {
-    nondet req = CreateReqs.oneOf()      promiseCreate(req),
-    nondet req = SettleReqs.oneOf()      promiseSettle(req),
-    nondet req = CallbackReqs.oneOf()    promiseRegisterCallback(req),
-    nondet req = ListenerReqs.oneOf()    promiseRegisterListener(req),
-    nondet req = TaskCreateReqs.oneOf()  taskCreate(req),
-    nondet req = TaskAcquireReqs.oneOf() taskAcquire(req),
-    nondet req = TaskRefs.oneOf()        taskFence(req),
-    nondet req = TaskBeatReqs.oneOf()    taskHeartbeat(req),
-    nondet req = TaskSuspendReqs.oneOf() taskSuspend(req),
-    nondet req = TaskFulfillReqs.oneOf() taskFulfill(req),
-    nondet req = TaskRefs.oneOf()        taskRelease(req),
-    nondet id  = Ids.oneOf()             taskHalt(id),
-    nondet id  = Ids.oneOf()             taskContinue(id),
-    processPromiseTimeout,
-    processLeaseTimeout,
-    processRetryTimeout,
-    processListener,
-    processCallback,
+    nondet req = CreateReqs.oneOf()      fireOne(promiseCreate(state, req)),
+    nondet req = SettleReqs.oneOf()      fireOne(promiseSettle(state, req)),
+    nondet req = CallbackReqs.oneOf()    fireOne(promiseRegisterCallback(state, req)),
+    nondet req = ListenerReqs.oneOf()    fireOne(promiseRegisterListener(state, req)),
+    nondet req = TaskCreateReqs.oneOf()  fireOne(taskCreate(state, req)),
+    nondet req = TaskAcquireReqs.oneOf() fireOne(taskAcquire(state, req)),
+    nondet req = TaskFenceReqs.oneOf()   fireOne(taskFence(state, req)),
+    nondet req = TaskBeatReqs.oneOf()    fireOne(taskHeartbeat(state, req)),
+    nondet req = TaskSuspendReqs.oneOf() fireOne(taskSuspend(state, req)),
+    nondet req = TaskFulfillReqs.oneOf() fireOne(taskFulfill(state, req)),
+    nondet req = TaskRefs.oneOf()        fireOne(taskRelease(state, req)),
+    nondet id  = Ids.oneOf()             fireOne(taskHalt(state, id)),
+    nondet id  = Ids.oneOf()             fireOne(taskContinue(state, id)),
+    nondet i   = Ids.oneOf()             fireOne(promiseTimeout(state, i)),
+    nondet i   = Ids.oneOf()             fireOne(leaseTimeout(state, i)),
+    nondet i   = Ids.oneOf()             fireOne(retryTimeout(state, i)),
+    nondet req = ListenerDrainReqs.oneOf()  fireOne(listenerDrain(state, req)),
+    nondet req = CallbackDrainReqs.oneOf()  fireOne(callbackDrain(state, req)),
     clock,
   }
 
   // ------------------------------------------------------------- what holds
+  //
+  // Stated over a STATE rather than over the variables, so that `refine.qnt`
+  // can ask them of what the executor's store denotes -- which is what
+  // `C_TypeOK == A!TypeOK` is in the TLA, and what Quint has no INSTANCE for.
 
   /// Every object in the store, as written.
-  val stored: Set[Object] = ids.map(i => objects.get(i))
+  pure def stored(s: State): Set[Object] =
+    s.objects.keys().map(i => s.objects.get(i))
 
   /// What Quint's types do not already say.
-  val typeOk = and {
-    Time.contains(now),
-    ids.subseteq(Ids),
-    outbox.forall(a => outbox.forall(b => msgKey(a) == msgKey(b) implies a == b)),
-    stored.forall(o => o.task.state == TaskNone implies o.task == noTask),
+  pure def typeOk(s: State): bool = and {
+    Time.contains(s.now),
+    s.objects.keys().subseteq(Ids),
+    s.outbox.forall(a => s.outbox.forall(b => msgKey(a) == msgKey(b) implies a == b)),
+    s.stored().forall(o => o.task.state == TaskNone implies o.task == noTask),
   }
 
-  val well_formed_promise_created_at_lte_timeout_at =
-    stored.forall(o => o.promise.createdAt <= o.promise.timeoutAt)
+  pure def well_formed_promise_created_at_lte_timeout_at(s: State): bool =
+    s.stored().forall(o => o.promise.createdAt <= o.promise.timeoutAt)
 
-  val well_formed_promise_settled_at_iff_not_pending =
-    stored.forall(o => (o.promise.state != Pending) iff (o.promise.settledAt != NoTime))
+  pure def well_formed_promise_settled_at_iff_not_pending(s: State): bool =
+    s.stored().forall(o => (o.promise.state != Pending) iff (o.promise.settledAt != NoTime))
 
-  val well_formed_promise_pending_has_no_value =
-    stored.forall(o => o.promise.state == Pending implies o.promise.value == NoValue)
+  pure def well_formed_promise_pending_has_no_value(s: State): bool =
+    s.stored().forall(o => o.promise.state == Pending implies o.promise.value == NoValue)
 
-  val well_formed_promise_settled_at_lte_timeout_at =
-    stored.forall(o =>
+  pure def well_formed_promise_settled_at_lte_timeout_at(s: State): bool =
+    s.stored().forall(o =>
       o.promise.settledAt != NoTime implies o.promise.settledAt <= o.promise.timeoutAt)
 
-  val well_formed_task_pending_iff_has_retry_at =
-    stored.forall(o => o.task.state != TaskNone implies
+  pure def well_formed_task_pending_iff_has_retry_at(s: State): bool =
+    s.stored().forall(o => o.task.state != TaskNone implies
       ((o.task.state == TaskPending) iff (o.task.retryAt != NoTime)))
 
-  val well_formed_task_acquired_iff_has_expires_at =
-    stored.forall(o => o.task.state != TaskNone implies
+  pure def well_formed_task_acquired_iff_has_expires_at(s: State): bool =
+    s.stored().forall(o => o.task.state != TaskNone implies
       ((o.task.state == TaskAcquired) iff (o.task.expiresAt != NoTime)))
 
-  val consistent_settled_promise_has_fulfilled_task =
-    stored.forall(o =>
+  pure def consistent_settled_promise_has_fulfilled_task(s: State): bool =
+    s.stored().forall(o =>
       (o.promise.state != Pending and o.task.state != TaskNone)
         implies o.task.state == TaskFulfilled)
 
-  val consistent_settled_task_promise_settled =
-    stored.forall(o => o.task.state == TaskFulfilled implies o.promise.state != Pending)
+  pure def consistent_settled_task_promise_settled(s: State): bool =
+    s.stored().forall(o => o.task.state == TaskFulfilled implies o.promise.state != Pending)
 
-  val consistent_task_iff_targeted_promise =
-    stored.forall(o => (o.task.state != TaskNone) iff o.promise.tags.targeted)
+  pure def consistent_task_iff_targeted_promise(s: State): bool =
+    s.stored().forall(o => (o.task.state != TaskNone) iff o.promise.tags.targeted)
 
   /// A promise and its task are ONE object, so one write moves both. No
   /// interleaving can catch them disagreeing -- which is a claim about the
   /// state shape, and the reason it is worth stating separately.
-  val unitCoherent =
-    stored.forall(o => not(and {
+  pure def unitCoherent(s: State): bool =
+    s.stored().forall(o => not(and {
       o.promise.state != Pending,
       not(Set(TaskNone, TaskFulfilled).contains(o.task.state)),
     }))
 
   /// An awaiter and the promise it awaits live at one origin. This is what
   /// makes an await local, and a server free to shard on the origin.
-  val sameOrigin =
-    ids.forall(i => objects.get(i).promise.callbacks.forall(w => w.origin == i.origin))
+  pure def sameOrigin(s: State): bool =
+    s.objects.keys().forall(i =>
+      s.objects.get(i).promise.callbacks.forall(w => w.origin == i.origin))
 
-  val allInvariants = and {
-    typeOk,
-    well_formed_promise_created_at_lte_timeout_at,
-    well_formed_promise_settled_at_iff_not_pending,
-    well_formed_promise_pending_has_no_value,
-    well_formed_promise_settled_at_lte_timeout_at,
-    well_formed_task_pending_iff_has_retry_at,
-    well_formed_task_acquired_iff_has_expires_at,
-    consistent_settled_promise_has_fulfilled_task,
-    consistent_settled_task_promise_settled,
-    consistent_task_iff_targeted_promise,
-    unitCoherent,
-    sameOrigin,
+  pure def invariants(s: State): bool = and {
+    typeOk(s),
+    well_formed_promise_created_at_lte_timeout_at(s),
+    well_formed_promise_settled_at_iff_not_pending(s),
+    well_formed_promise_pending_has_no_value(s),
+    well_formed_promise_settled_at_lte_timeout_at(s),
+    well_formed_task_pending_iff_has_retry_at(s),
+    well_formed_task_acquired_iff_has_expires_at(s),
+    consistent_settled_promise_has_fulfilled_task(s),
+    consistent_settled_task_promise_settled(s),
+    consistent_task_iff_targeted_promise(s),
+    unitCoherent(s),
+    sameOrigin(s),
   }
+
+  val allInvariants = invariants(state)
 }

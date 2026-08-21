@@ -80,6 +80,23 @@ module requests {
   pure def isExternal(p: Promise): bool =
     p.tags.external or p.tags.targeted or p.tags.timer
 
+  // ------------------------------------------------------------- the deadlines
+
+  /// Three deadlines, all of them FIELDS on the object. An executor that keeps
+  /// an index keeps it of these; the protocol just reads them.
+  type DeadlineKind = PromiseDeadline | LeaseDeadline | RetryDeadline
+
+  type Entry = { at: int, id: Id, kind: DeadlineKind }
+
+  pure val DeadlineKinds = Set(PromiseDeadline, LeaseDeadline, RetryDeadline)
+
+  pure def deadline(o: Object, k: DeadlineKind): int =
+    match k {
+      | PromiseDeadline => if (o.promise.state == Pending) o.promise.timeoutAt else NoTime
+      | LeaseDeadline   => o.task.expiresAt
+      | RetryDeadline   => o.task.retryAt
+    }
+
   // -------------------------------------------------------------- the outbox
 
   type Message =
@@ -108,6 +125,17 @@ module requests {
   type TaskRef     = { id: Id, version: int }
 
   // `action` is a Quint keyword, so the field the TLA calls `action` is `act`.
+  type TimeoutReq       = { id: Id, kind: DeadlineKind }
+  type ListenerDrainReq = { id: Id, address: Address }
+  type CallbackDrainReq = { id: Id, awaiter: Id }
+
+  /// A fenced write is a create or a settle, carried by the task that fences it.
+  type FenceAct = FenceCreate(CreateReq) | FenceSettle(SettleReq)
+
+  pure def fencedId(a: FenceAct): Id =
+    match a { | FenceCreate(r) => r.id | FenceSettle(r) => r.id }
+
+  type TaskFenceReq   = { id: Id, version: int, act: FenceAct }
   type TaskCreateReq  = { pid: Pid, ttl: int, act: CreateReq }
   type TaskAcquireReq = { id: Id, version: int, pid: Pid, ttl: int }
   type TaskBeatReq    = { pid: Pid, tasks: Set[TaskRef] }
@@ -193,4 +221,73 @@ module requests {
   pure val TaskFulfillReqs: Set[TaskFulfillReq] =
     tuples(Ids, Versions, SettleReqs)
       .map(((id, version, act)) => { id: id, version: version, act: act })
+
+  // ---------------------------------------------------------------- the alphabet
+  //
+  // The events both machines speak. `abstractAction` and `concrete` are two
+  // independent machines, and the refinement asks whether their behaviour lines
+  // up -- so they had better be answering the same questions.
+
+  type Event =
+      PromiseGet(Id)
+    | PromiseCreate(CreateReq)
+    | PromiseSettle(SettleReq)
+    | PromiseRegisterCallback(CallbackReq)
+    | PromiseRegisterListener(ListenerReq)
+    | TaskGet(Id)
+    | TaskCreate(TaskCreateReq)
+    | TaskAcquire(TaskAcquireReq)
+    | TaskFence(TaskFenceReq)
+    | TaskHeartbeat(TaskBeatReq)
+    | TaskSuspend(TaskSuspendReq)
+    | TaskFulfill(TaskFulfillReq)
+    | TaskRelease(TaskRef)
+    | TaskHalt(Id)
+    | TaskContinue(Id)
+    | Timeout(TimeoutReq)
+    | ListenerDrain(ListenerDrainReq)
+    | CallbackDrain(CallbackDrainReq)
+
+  pure val FenceActs: Set[FenceAct] =
+    CreateReqs.map(r => FenceCreate(r)).union(SettleReqs.map(r => FenceSettle(r)))
+
+  pure val TaskFenceReqs: Set[TaskFenceReq] =
+    tuples(Ids, Versions, FenceActs)
+      .map(((id, version, act)) => { id: id, version: version, act: act })
+
+  pure val TimeoutReqs: Set[TimeoutReq] =
+    tuples(Ids, DeadlineKinds).map(((id, kind)) => { id: id, kind: kind })
+
+  pure val CallbackDrainReqs: Set[CallbackDrainReq] =
+    CallbackReqs.map(r => { id: r.awaited, awaiter: r.awaiter })
+
+  pure val ListenerDrainReqs: Set[ListenerDrainReq] =
+    ListenerReqs.map(r => { id: r.awaited, address: r.address })
+
+  /// What a client may ask for.
+  pure val ExternalEvents: Set[Event] =
+    Ids.map(i => PromiseGet(i))
+      .union(CreateReqs.map(r => PromiseCreate(r)))
+      .union(SettleReqs.map(r => PromiseSettle(r)))
+      .union(CallbackReqs.map(r => PromiseRegisterCallback(r)))
+      .union(ListenerReqs.map(r => PromiseRegisterListener(r)))
+      .union(Ids.map(i => TaskGet(i)))
+      .union(TaskCreateReqs.map(r => TaskCreate(r)))
+      .union(TaskAcquireReqs.map(r => TaskAcquire(r)))
+      .union(TaskFenceReqs.map(r => TaskFence(r)))
+      .union(TaskBeatReqs.map(r => TaskHeartbeat(r)))
+      .union(TaskSuspendReqs.map(r => TaskSuspend(r)))
+      .union(TaskFulfillReqs.map(r => TaskFulfill(r)))
+      .union(TaskRefs.map(r => TaskRelease(r)))
+      .union(Ids.map(i => TaskHalt(i)))
+      .union(Ids.map(i => TaskContinue(i)))
+
+  /// What the server owes itself: a deadline that has come due, and a settled
+  /// promise that still carries a name it has not answered.
+  pure val InternalEvents: Set[Event] =
+    TimeoutReqs.map(r => Timeout(r))
+      .union(ListenerDrainReqs.map(r => ListenerDrain(r)))
+      .union(CallbackDrainReqs.map(r => CallbackDrain(r)))
+
+  pure val Events: Set[Event] = ExternalEvents.union(InternalEvents)
 }
