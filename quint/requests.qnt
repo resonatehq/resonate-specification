@@ -25,16 +25,24 @@ module requests {
     delay:    int,
   }
 
-  /// There is no `None`. One value standing for absence answers four different
-  /// questions at once, so each gets its own: an absent instant is `NoTime`, an
-  /// absent worker is `NoPid`, an absent address is `NoAddr`, an absent value is
-  /// `NoValue` -- and an absent task is a task in state `TaskNone`, which is the
+  /// ABSENCE IS A VALUE, and it has one name. `tla/Requests.tla` needs four --
+  /// `NoTime`, `NoPid`, `NoAddr`, `NoValue` -- because TLA+ has no sum type to
+  /// put absence in, and one sentinel answering four different questions is
+  /// worse than four sentinels answering one each. Quint has the sum type, so
+  /// the question is answered once, by the type.
+  ///
+  /// An absent TASK is still not one of these. A task in state `TaskNone` is the
   /// honest reading: whether a promise is targeted is part of the unit's state,
   /// not a hole in it.
-  pure val NoTime  = -1
-  pure val NoPid   = "nopid"
-  pure val NoAddr  = "noaddr"
-  pure val NoValue = "noval"
+  type Option[a] = Some(a) | None
+
+  /// A deadline that has come. `None` is never due, which is a fact of the type
+  /// rather than a guard anybody has to remember to write.
+  pure def due(d: Option[int], t: int): bool =
+    match d { | Some(at) => at <= t | None => false }
+
+  pure def mapOption(o: Option[a], f: (a) => b): Option[b] =
+    match o { | Some(x) => Some(f(x)) | None => None }
 
   // --------------------------------------------------------------- the object
 
@@ -47,11 +55,11 @@ module requests {
   type Promise = {
     state:     PromiseState,
     param:     Value,
-    value:     Value,
+    value:     Option[Value],   // a timed-out promise settles with none
     tags:      Tags,
     timeoutAt: int,             // deadline -- armed as "promise"
     createdAt: int,
-    settledAt: int,             // NoTime while pending
+    settledAt: Option[int],
     callbacks: Set[Id],         // awaiters to resume when this settles
     listeners: Set[Address],    // addresses to notify when this settles
   }
@@ -59,10 +67,10 @@ module requests {
   type Task = {
     state:     TaskState,
     version:   int,             // the fencing token
-    ttl:       int,             // the WORKER's number: the lease it asked for
-    pid:       Pid,
-    expiresAt: int,             // deadline -- armed as "lease"
-    retryAt:   int,             // deadline -- armed as "retry"
+    ttl:       Option[int],     // the WORKER's number: the lease it asked for
+    pid:       Option[Pid],
+    expiresAt: Option[int],     // deadline -- armed as "lease"
+    retryAt:   Option[int],     // deadline -- armed as "retry"
     resumes:   Set[Id],         // triggers buffered while not suspended
   }
 
@@ -71,8 +79,8 @@ module requests {
   type Object = { promise: Promise, task: Task }
 
   pure val noTask: Task = {
-    state: TaskNone, version: 0, ttl: NoTime, pid: NoPid,
-    expiresAt: NoTime, retryAt: NoTime, resumes: Set(),
+    state: TaskNone, version: 0, ttl: None, pid: None,
+    expiresAt: None, retryAt: None, resumes: Set(),
   }
 
   /// Only an external promise may be awaited: something outside this server
@@ -90,9 +98,9 @@ module requests {
 
   pure val DeadlineKinds = Set(PromiseDeadline, LeaseDeadline, RetryDeadline)
 
-  pure def deadline(o: Object, k: DeadlineKind): int =
+  pure def deadline(o: Object, k: DeadlineKind): Option[int] =
     match k {
-      | PromiseDeadline => if (o.promise.state == Pending) o.promise.timeoutAt else NoTime
+      | PromiseDeadline => if (o.promise.state == Pending) Some(o.promise.timeoutAt) else None
       | LeaseDeadline   => o.task.expiresAt
       | RetryDeadline   => o.task.retryAt
     }
@@ -103,14 +111,14 @@ module requests {
     Execute({ id: Id, version: int }) | Unblock({ id: Id, state: PromiseState })
 
   type OutEntry = { address: Address, message: Message }
-  type MsgKey   = { kind: str, id: Id, address: Address }
+  type MsgKey   = { kind: str, id: Id, address: Option[Address] }
 
   /// The outbox holds at most one entry per key: a second Execute for a task
   /// replaces the first, an Unblock is per (promise, address).
   pure def msgKey(e: OutEntry): MsgKey =
     match e.message {
-      | Execute(m) => { kind: "execute", id: m.id, address: NoAddr }
-      | Unblock(m) => { kind: "unblock", id: m.id, address: e.address }
+      | Execute(m) => { kind: "execute", id: m.id, address: None }
+      | Unblock(m) => { kind: "unblock", id: m.id, address: Some(e.address) }
     }
 
   pure def send(box: Set[OutEntry], msg: OutEntry): Set[OutEntry] =

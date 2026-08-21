@@ -50,6 +50,16 @@ misspelled state is a parse error rather than a guard that is quietly never
 true — which is what the Apalache type pass was buying, made part of the
 language.
 
+**And so is absence.** `tla/Requests.tla` needs four sentinels — `NoTime`,
+`NoPid`, `NoAddr`, `NoValue` — because TLA+ has no sum type to put absence in,
+and one sentinel answering four different questions is worse than four answering
+one each. Here it is `Option[a] = Some(a) | None`, once, and the guards get
+shorter for it: `expiresAt != NoTime and expiresAt <= now` becomes
+`due(expiresAt, now)`, where "`None` is never due" is a fact of the type rather
+than a conjunct anybody has to remember. An absent TASK is still not an option
+type — a task in state `TaskNone` is the honest reading, because whether a
+promise is targeted is part of the unit's state and not a hole in it.
+
 **Two things Quint costs.** There is no primed READ, so a two-state property
 needs the previous state carried in a spectator variable: that is all of
 `trans.qnt`'s scaffolding and all of `refine.qnt`'s. And `action` is a keyword,

@@ -33,26 +33,26 @@ module abstract {
   /// with it. A promise that has no task still has no task.
   pure def settled(t: Task): Task = { ...t,
     state: if (t.state == TaskNone) TaskNone else TaskFulfilled,
-    pid: NoPid, ttl: NoTime, expiresAt: NoTime, retryAt: NoTime, resumes: Set() }
+    pid: None, ttl: None, expiresAt: None, retryAt: None, resumes: Set() }
 
   /// Held by `pid` until `at + ttl`. The version bump IS the fence: whoever
   /// held it before is now naming a version that no longer exists.
   pure def acquiredBy(t: Task, pid: Pid, ttl: int, at: int): Task = { ...t,
-    state: TaskAcquired, version: t.version + 1, ttl: ttl, pid: pid,
-    expiresAt: at + ttl, retryAt: NoTime, resumes: Set() }
+    state: TaskAcquired, version: t.version + 1, ttl: Some(ttl), pid: Some(pid),
+    expiresAt: Some(at + ttl), retryAt: None, resumes: Set() }
 
   /// Nobody holds it, and it is due at `at`. Keeps `resumes`: a wakeup that
   /// arrived while the task was running is still owed to whoever picks it up.
   pure def pendingAt(t: Task, at: int): Task = { ...t,
-    state: TaskPending, pid: NoPid, ttl: NoTime, expiresAt: NoTime, retryAt: at }
+    state: TaskPending, pid: None, ttl: None, expiresAt: None, retryAt: Some(at) }
 
   /// Parked on someone else's promise: no lease, no retry, nothing due.
   pure def suspended(t: Task): Task = { ...t,
-    state: TaskSuspended, pid: NoPid, ttl: NoTime, expiresAt: NoTime,
-    retryAt: NoTime, resumes: Set() }
+    state: TaskSuspended, pid: None, ttl: None, expiresAt: None,
+    retryAt: None, resumes: Set() }
 
   pure def halted(t: Task): Task = { ...t,
-    state: TaskHalted, pid: NoPid, ttl: NoTime, expiresAt: NoTime, retryAt: NoTime }
+    state: TaskHalted, pid: None, ttl: None, expiresAt: None, retryAt: None }
 
   pure def withTask(o: Object, t: Task): Object = { ...o, task: t }
 
@@ -77,7 +77,7 @@ module abstract {
   pure def project(obj: Object, t: int): Object =
     if (obj.promise.state == Pending and obj.promise.timeoutAt <= t)
       { promise: { ...obj.promise, state: lapsed(obj.promise.tags),
-                   value: NoValue, settledAt: obj.promise.timeoutAt },
+                   value: None, settledAt: Some(obj.promise.timeoutAt) },
         task: obj.task.settled() }
     else
       obj
@@ -88,15 +88,15 @@ module abstract {
     val alive = req.timeoutAt > t
     { promise: { state:     if (alive) Pending else lapsed(req.tags),
                  param:     req.param,
-                 value:     NoValue,
+                 value:     None,
                  tags:      req.tags,
                  timeoutAt: req.timeoutAt,
                  createdAt: if (alive) t else req.timeoutAt,
-                 settledAt: if (alive) NoTime else req.timeoutAt,
+                 settledAt: if (alive) None else Some(req.timeoutAt),
                  callbacks: Set(),
                  listeners: Set() },
       task:    if (not(req.tags.targeted)) noTask
-               else if (alive) { ...noTask, state: TaskPending, retryAt: t }
+               else if (alive) { ...noTask, state: TaskPending, retryAt: Some(t) }
                else { ...noTask, state: TaskFulfilled } }
 
   // ------------------------------------------------------------- reading state
@@ -127,8 +127,8 @@ module abstract {
     val old = s.live(req.id)
     if (and { s.has(req.id), old.promise.state == Pending })
       Set(s.write(req.id,
-        { promise: { ...old.promise, state: req.state, value: req.value,
-                     settledAt: s.now },
+        { promise: { ...old.promise, state: req.state, value: Some(req.value),
+                     settledAt: Some(s.now) },
           task:    old.task.settled() }))
     else noStep
 
@@ -217,13 +217,14 @@ module abstract {
       and {
         req.tasks.exists(rf => rf.id == i and rf.version == o.task.version),
         o.task.state == TaskAcquired,
-        o.task.pid == req.pid,
+        o.task.pid == Some(req.pid),
         o.promise.state == Pending,
       })
     if (beat != Set())
       Set(beat.fold(s, (acc, i) =>
         val o = s.live(i)
-        acc.write(i, o.withTask({ ...o.task, expiresAt: s.now + o.task.ttl }))))
+        acc.write(i, o.withTask({ ...o.task,
+          expiresAt: o.task.ttl.mapOption(t => s.now + t) }))))
     else noStep
 
   /// Park a task on the promises it is waiting for, registering itself on each.
@@ -262,8 +263,8 @@ module abstract {
       old.task.version == req.version,
     })
       Set(s.write(req.id,
-        { promise: { ...old.promise, state: req.act.state, value: req.act.value,
-                     settledAt: s.now },
+        { promise: { ...old.promise, state: req.act.state, value: Some(req.act.value),
+                     settledAt: Some(s.now) },
           task:    old.task.settled() }))
     else noStep
 
@@ -322,8 +323,7 @@ module abstract {
     if (and {
       s.has(i),
       old.task.state == TaskAcquired,
-      old.task.expiresAt != NoTime,
-      old.task.expiresAt <= s.now,
+      due(old.task.expiresAt, s.now),
       old.promise.state == Pending,
     })
       Set(s.write(i, old.withTask(old.task.pendingAt(s.now))))
@@ -338,11 +338,10 @@ module abstract {
     if (and {
       s.has(i),
       old.task.state == TaskPending,
-      old.task.retryAt != NoTime,
-      old.task.retryAt <= s.now,
+      due(old.task.retryAt, s.now),
       old.promise.state == Pending,
     })
-      Set({ ...s.write(i, old.withTask({ ...old.task, retryAt: s.now + RetryTimeout })),
+      Set({ ...s.write(i, old.withTask({ ...old.task, retryAt: Some(s.now + RetryTimeout) })),
             outbox: s.outbox.send(msg) })
     else noStep
 
@@ -509,22 +508,22 @@ module abstract {
     s.stored().forall(o => o.promise.createdAt <= o.promise.timeoutAt)
 
   pure def well_formed_promise_settled_at_iff_not_pending(s: State): bool =
-    s.stored().forall(o => (o.promise.state != Pending) iff (o.promise.settledAt != NoTime))
+    s.stored().forall(o => (o.promise.state != Pending) iff (o.promise.settledAt != None))
 
   pure def well_formed_promise_pending_has_no_value(s: State): bool =
-    s.stored().forall(o => o.promise.state == Pending implies o.promise.value == NoValue)
+    s.stored().forall(o => o.promise.state == Pending implies o.promise.value == None)
 
   pure def well_formed_promise_settled_at_lte_timeout_at(s: State): bool =
     s.stored().forall(o =>
-      o.promise.settledAt != NoTime implies o.promise.settledAt <= o.promise.timeoutAt)
+      match o.promise.settledAt { | Some(at) => at <= o.promise.timeoutAt | None => true })
 
   pure def well_formed_task_pending_iff_has_retry_at(s: State): bool =
     s.stored().forall(o => o.task.state != TaskNone implies
-      ((o.task.state == TaskPending) iff (o.task.retryAt != NoTime)))
+      ((o.task.state == TaskPending) iff (o.task.retryAt != None)))
 
   pure def well_formed_task_acquired_iff_has_expires_at(s: State): bool =
     s.stored().forall(o => o.task.state != TaskNone implies
-      ((o.task.state == TaskAcquired) iff (o.task.expiresAt != NoTime)))
+      ((o.task.state == TaskAcquired) iff (o.task.expiresAt != None)))
 
   pure def consistent_settled_promise_has_fulfilled_task(s: State): bool =
     s.stored().forall(o =>

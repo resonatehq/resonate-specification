@@ -56,16 +56,16 @@ module trans {
   pure def bornClean(q: Promise, t: int): bool = and {
     q.callbacks == Set(),
     q.listeners == Set(),
-    q.value == NoValue,
+    q.value == None,
     q.createdAt <= t,
     or {
       and {
         q.state == Pending,
-        q.settledAt == NoTime,
+        q.settledAt == None,
         q.createdAt < q.timeoutAt,
       },
       and {
-        q.settledAt == q.timeoutAt,
+        q.settledAt == Some(q.timeoutAt),
         q.createdAt == q.timeoutAt,
         q.timeoutAt <= t,
         q.state == (if (q.tags.timer) Resolved else RejectedTimedout),
@@ -85,12 +85,12 @@ module trans {
   pure def settlementStamp(before: Promise, after: Promise, t: int): bool = or {
     after.state == Pending,
     and {
-      after.settledAt == t,
+      after.settledAt == Some(t),
       t < after.timeoutAt,
       after.state != RejectedTimedout,
     },
     and {
-      after.settledAt == after.timeoutAt,
+      after.settledAt == Some(after.timeoutAt),
       after.timeoutAt <= t,
       after.state == (if (after.tags.timer) Resolved else RejectedTimedout),
       after.value == before.value,

@@ -65,28 +65,28 @@ module concrete {
 
   pure def settled(t: Task): Task = { ...t,
     state: if (t.state == TaskNone) TaskNone else TaskFulfilled,
-    pid: NoPid, ttl: NoTime, expiresAt: NoTime, retryAt: NoTime, resumes: Set() }
+    pid: None, ttl: None, expiresAt: None, retryAt: None, resumes: Set() }
 
   pure def acquiredBy(t: Task, pid: Pid, ttl: int, at: int): Task = { ...t,
-    state: TaskAcquired, version: t.version + 1, ttl: ttl, pid: pid,
-    expiresAt: at + ttl, retryAt: NoTime, resumes: Set() }
+    state: TaskAcquired, version: t.version + 1, ttl: Some(ttl), pid: Some(pid),
+    expiresAt: Some(at + ttl), retryAt: None, resumes: Set() }
 
   pure def pendingAt(t: Task, at: int): Task = { ...t,
-    state: TaskPending, pid: NoPid, ttl: NoTime, expiresAt: NoTime, retryAt: at }
+    state: TaskPending, pid: None, ttl: None, expiresAt: None, retryAt: Some(at) }
 
   pure def suspended(t: Task): Task = { ...t,
-    state: TaskSuspended, pid: NoPid, ttl: NoTime, expiresAt: NoTime,
-    retryAt: NoTime, resumes: Set() }
+    state: TaskSuspended, pid: None, ttl: None, expiresAt: None,
+    retryAt: None, resumes: Set() }
 
   pure def halted(t: Task): Task = { ...t,
-    state: TaskHalted, pid: NoPid, ttl: NoTime, expiresAt: NoTime, retryAt: NoTime }
+    state: TaskHalted, pid: None, ttl: None, expiresAt: None, retryAt: None }
 
   pure def withTask(o: Object, t: Task): Object = { ...o, task: t }
 
   pure def project(obj: Object, t: int): Object =
     if (obj.promise.state == Pending and obj.promise.timeoutAt <= t)
       { promise: { ...obj.promise, state: lapsed(obj.promise.tags),
-                   value: NoValue, settledAt: obj.promise.timeoutAt },
+                   value: None, settledAt: Some(obj.promise.timeoutAt) },
         task: obj.task.settled() }
     else
       obj
@@ -95,15 +95,15 @@ module concrete {
     val alive = req.timeoutAt > t
     { promise: { state:     if (alive) Pending else lapsed(req.tags),
                  param:     req.param,
-                 value:     NoValue,
+                 value:     None,
                  tags:      req.tags,
                  timeoutAt: req.timeoutAt,
                  createdAt: if (alive) t else req.timeoutAt,
-                 settledAt: if (alive) NoTime else req.timeoutAt,
+                 settledAt: if (alive) None else Some(req.timeoutAt),
                  callbacks: Set(),
                  listeners: Set() },
       task:    if (not(req.tags.targeted)) noTask
-               else if (alive) { ...noTask, state: TaskPending, retryAt: t }
+               else if (alive) { ...noTask, state: TaskPending, retryAt: Some(t) }
                else { ...noTask, state: TaskFulfilled } }
 
   // --------------------------------------------------------------- the effects
@@ -145,8 +145,8 @@ module concrete {
       val old = env.live(req.id)
       if (old.promise.state != Pending) nothing
       else putting(req.id,
-        { promise: { ...old.promise, state: req.state, value: req.value,
-                     settledAt: env.now },
+        { promise: { ...old.promise, state: req.state, value: Some(req.value),
+                     settledAt: Some(env.now) },
           task:    old.task.settled() })
 
   pure def handlePromiseRegisterCallback(req: CallbackReq, env: Env): List[Effect] =
@@ -223,12 +223,13 @@ module concrete {
         and {
           req.tasks.exists(rf => rf.id == i and rf.version == o.task.version),
           o.task.state == TaskAcquired,
-          o.task.pid == req.pid,
+          o.task.pid == Some(req.pid),
           o.promise.state == Pending,
         })
       .fold(nothing, (acc, i) =>
         val o = env.live(i)
-        acc.concat(putting(i, o.withTask({ ...o.task, expiresAt: env.now + o.task.ttl }))))
+        acc.concat(putting(i, o.withTask({ ...o.task,
+          expiresAt: o.task.ttl.mapOption(t => env.now + t) }))))
 
   pure def handleTaskSuspend(req: TaskSuspendReq, env: Env): List[Effect] =
     val aw = req.actions.map(a => a.awaited)
@@ -267,8 +268,8 @@ module concrete {
         old.task.version != req.version,
       }) nothing
       else putting(req.id,
-        { promise: { ...old.promise, state: req.act.state, value: req.act.value,
-                     settledAt: env.now },
+        { promise: { ...old.promise, state: req.act.state, value: Some(req.act.value),
+                     settledAt: Some(env.now) },
           task:    old.task.settled() })
 
   pure def handleTaskRelease(req: TaskRef, env: Env): List[Effect] =
@@ -309,8 +310,7 @@ module concrete {
       val old = env.objects.get(i)
       if (or {
         old.task.state != TaskAcquired,
-        old.task.expiresAt == NoTime,
-        old.task.expiresAt > env.now,
+        not(due(old.task.expiresAt, env.now)),
         project(old, env.now).promise.state != Pending,
       }) nothing
       else putting(i, old.withTask(old.task.pendingAt(env.now)))
@@ -321,12 +321,11 @@ module concrete {
       val old = env.objects.get(i)
       if (or {
         old.task.state != TaskPending,
-        old.task.retryAt == NoTime,
-        old.task.retryAt > env.now,
+        not(due(old.task.retryAt, env.now)),
         project(old, env.now).promise.state != Pending,
       }) nothing
       else
-        putting(i, old.withTask({ ...old.task, retryAt: env.now + RetryTimeout }))
+        putting(i, old.withTask({ ...old.task, retryAt: Some(env.now + RetryTimeout) }))
           .concat(saying({ address: old.promise.tags.target,
                            message: Execute({ id: i, version: old.task.version }) }))
 
@@ -401,10 +400,7 @@ module concrete {
   pure def drainableTimeouts(doc: Doc, t: int): Set[TimeoutReq] =
     tuples(doc.keys(), DeadlineKinds)
       .map(((i, k)) => { id: i, kind: k })
-      .filter(d => and {
-        deadline(doc.get(d.id), d.kind) != NoTime,
-        deadline(doc.get(d.id), d.kind) <= t,
-      })
+      .filter(d => due(deadline(doc.get(d.id), d.kind), t))
 
   /// A settled promise still carrying a name owes that name an answer.
   pure def answerable(doc: Doc, t: int): Set[Id] =
@@ -445,20 +441,24 @@ module concrete {
   // indexes, and the only way to know is to compare the document before against
   // the document after.
 
-  pure def was(before: Doc, i: Id, k: DeadlineKind): int =
-    if (before.keys().contains(i)) deadline(before.get(i), k) else NoTime
+  pure def was(before: Doc, i: Id, k: DeadlineKind): Option[int] =
+    if (before.keys().contains(i)) deadline(before.get(i), k) else None
 
   pure def armFor(before: Doc, i: Id, obj: Object, k: DeadlineKind): List[Effect] =
-    val due = deadline(obj, k)
-    if (due != NoTime and due != was(before, i, k))
-      [ArmTimeout({ entry: { at: due, id: i, kind: k } })]
-    else nothing
+    match deadline(obj, k) {
+      | None     => nothing
+      | Some(at) => if (Some(at) != was(before, i, k))
+                      [ArmTimeout({ entry: { at: at, id: i, kind: k } })]
+                    else nothing
+    }
 
   pure def disarmFor(before: Doc, i: Id, obj: Object, k: DeadlineKind): List[Effect] =
-    val from = was(before, i, k)
-    if (from != NoTime and from != deadline(obj, k))
-      [DisarmTimeout({ entry: { at: from, id: i, kind: k } })]
-    else nothing
+    match was(before, i, k) {
+      | None     => nothing
+      | Some(at) => if (Some(at) != deadline(obj, k))
+                      [DisarmTimeout({ entry: { at: at, id: i, kind: k } })]
+                    else nothing
+    }
 
   /// Arm before the write and disarm after, which is Verus's `sched + put +
   /// ack`. Arming first means a crash between the arm and the write leaves an
@@ -671,15 +671,17 @@ module concrete {
   val wheelSound =
     timeouts.forall(e => and {
       objects.keys().contains(e.id),
-      deadline(objects.get(e.id), e.kind) == e.at,
+      deadline(objects.get(e.id), e.kind) == Some(e.at),
     })
 
   /// Every deadline an object carries is one the wheel will fire. THIS is the
   /// one that matters: a deadline nothing holds is a timeout that never fires.
   val wheelComplete =
     tuples(objects.keys(), DeadlineKinds).forall(((i, k)) =>
-      deadline(objects.get(i), k) != NoTime implies
-        timeouts.contains({ at: deadline(objects.get(i), k), id: i, kind: k }))
+      match deadline(objects.get(i), k) {
+        | None     => true
+        | Some(at) => timeouts.contains({ at: at, id: i, kind: k })
+      })
 
   /// A step that has written part of what it decided and still holds the rest.
   val splitWrite =
@@ -735,5 +737,5 @@ module concrete {
       .then(perform("q1"))                             // re-arm at now + RetryTimeout
       .then(perform("q1"))                             // write and say, together
       .expect(outbox.size() == 1)
-      .expect(objects.get(idB).task.retryAt == RetryTimeout)
+      .expect(objects.get(idB).task.retryAt == Some(RetryTimeout))
 }
