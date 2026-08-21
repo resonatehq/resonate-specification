@@ -12,8 +12,21 @@
 /// The client here is the WORLD: it may send any request at any time, in any
 /// order. That is what makes this a specification rather than a program.
 module abstract {
-  import basicSpells.* from "./spells/basicSpells"
   import choreo(processes = NODES) as choreo from "./choreo"
+
+  /// ABSENCE IS A VALUE, and it has a name. `tla/Requests.tla` had to give it
+  /// four different names -- `NoTime`, `NoPid`, `NoAddr`, `NoValue` -- because
+  /// TLA+ has no sum type to put it in, and one sentinel standing for four
+  /// different questions is worse than four sentinels. Here the question is
+  /// answered once, by the type.
+  type Option[a] = Some(a) | None
+
+  /// Keep the ones that answer, and unwrap them.
+  pure def filterMap(s: Set[a], f: (a) => Option[b]): Set[b] =
+    s.fold(Set(), (acc, e) => match f(e) {
+      | Some(x) => acc.union(Set(x))
+      | None    => acc
+    })
 
   type Id = str
   type Value = str
