@@ -11,6 +11,7 @@ Two machines and the question between them.
 | `trans.qnt` | the four properties that are about a PAIR of states |
 | `witnesses.qnt` | the states the machines had better be able to reach |
 | `check.sh` | types, the written-down traces, then simulation |
+| `choreo/` | a second cut of the same system, in [Choreo](https://quint-lang.org/docs/choreo): processes rather than a store, and what fragmenting a continuation costs |
 
 `abstract.qnt` is `tla/AbstractAction.tla`, `concrete.qnt` is
 `tla/Concrete.tla`, and `refine.qnt` is `tla/RefineAction.tla` — same protocol,
