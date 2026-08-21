@@ -1,114 +1,175 @@
-/// THE ABSTRACT MACHINE: one process per invocation, and a continuation that
-/// never leaves the process it was born in.
+/// THE SPECIFICATION. A server that handles a request when one arrives, and
+/// does its own background work when that is enabled. That is all of it.
 ///
-/// An invocation that awaits PARKS -- it keeps its continuation and blocks. This
-/// is what an ordinary async runtime gives you: the coroutine sits in memory
-/// with its stack, and the await is a pause in one place.
+/// There are no executions here, no workers, no continuations and no fragments.
+/// A promise is a record that settles once; a callback is a name to answer when
+/// it does; and work becoming runnable is something the server does to itself.
+/// What a program is, where it has got to, and what remains of it are not
+/// questions at this level -- which is exactly why an implementation is free to
+/// chop an execution into pieces, and why `concrete.qnt` may have continuations
+/// that this file has never heard of.
 ///
-/// LOOK AT `Message`. There is no constructor that carries a `Cont`. In this
-/// machine a continuation is not sendable, so it cannot go anywhere, so one
-/// execution is one process from beginning to end. That is the abstraction --
-/// and `concrete.qnt` is what it costs to give it up.
+/// The client here is the WORLD: it may send any request at any time, in any
+/// order. That is what makes this a specification rather than a program.
 module abstract {
   import basicSpells.* from "./spells/basicSpells"
-  import workflow.* from "./workflow"
-  import choreo(processes = IDS) as choreo from "./choreo"
+  import choreo(processes = NODES) as choreo from "./choreo"
 
-  type Node = Id
+  type Id = str
+  type Value = str
 
-  /// Two messages, neither of which carries a continuation.
+  pure val IDS: Set[Id] = Set("i1", "i2")
+  pure val VALUES: Set[Value] = Set("v", "w")
+
+  type Node = str
+  pure val CLIENT: Node = "client"
+  pure val SERVER: Node = "server"
+  pure val NODES = Set(CLIENT, SERVER)
+
+  /// Every request the protocol has.
   type Message =
-    | Invoke(Id)
-    | Completed({ id: Id, value: int })
+    | Create(Id)
+    | Resolve({ id: Id, value: Value })
+    | Callback({ awaited: Id, awaiter: Id })
 
-  /// Where an invocation is. `Parked` HOLDS ITS CONTINUATION while it waits.
-  type Phase =
-    | Unborn
-    | Holding(Cont)
-    | Parked({ cont: Cont, awaited: Id })
-    | Returned(int)
+  type Promise = { settled: Option[Value], callbacks: Set[Id] }
 
-  type StateFields = { phase: Phase }
+  type Role = Client | Server
+
+  type StateFields = {
+    role:     Role,
+    promises: Id -> Promise,   // the server's store
+    runnable: Set[Id],         // what the server owes someone a turn for
+  }
+
   type CustomEffects = ()
   type Event = ()
   type Extensions = ()
 
-  type LocalState   = choreo::LocalState[Node, StateFields]
-  type LocalContext = choreo::LocalContext[Node, StateFields, Message, Event, Extensions]
-  type Transition   = choreo::Transition[Node, StateFields, Message, Event, CustomEffects]
+  type LocalState    = choreo::LocalState[Node, StateFields]
+  type LocalContext  = choreo::LocalContext[Node, StateFields, Message, Event, Extensions]
+  type Transition    = choreo::Transition[Node, StateFields, Message, Event, CustomEffects]
   type GlobalContext = choreo::GlobalContext[Node, StateFields, Message, Event, Extensions]
 
-  // ---------------------------------------------------------------- the moves
+  // ---------------------------------------------------------------- the world
 
-  /// An invocation begins when someone calls it.
-  pure def listen_invoke(ctx: LocalContext): Set[Id] =
-    if (ctx.state.phase != Unborn) Set() else
+  /// Any request, at any time. The client is not a participant with a protocol
+  /// of its own -- it is the set of things that may happen to the server.
+  pure def sends(ctx: LocalContext): Set[Transition] =
+    if (ctx.state.role != Client) Set() else
+    val creates   = IDS.map(i => Create(i))
+    val resolves  = tuples(IDS, VALUES).map(((i, v)) => Resolve({ id: i, value: v }))
+    val callbacks = tuples(IDS, IDS).filter(((a, w)) => a != w)
+                      .map(((a, w)) => Callback({ awaited: a, awaiter: w }))
+    creates.union(resolves).union(callbacks).map(req => {
+      post_state: ctx.state,
+      effects: Set(choreo::Send({ to: SERVER, message: req })),
+    })
+
+  // --------------------------------------------------------------- the server
+
+  pure def known(ctx: LocalContext, i: Id): bool = ctx.state.promises.keys().contains(i)
+  pure def pending(ctx: LocalContext, i: Id): bool =
+    known(ctx, i) and ctx.state.promises.get(i).settled == None
+
+  /// A promise is created once. Asking again is not an error and not a change.
+  pure def listen_create(ctx: LocalContext): Set[Id] =
+    if (ctx.state.role != Server) Set() else
     ctx.messages.filterMap(m => match m {
-      | Invoke(id) => if (id == ctx.state.process_id) Some(id) else None
+      | Create(i) => if (not(known(ctx, i))) Some(i) else None
+      | _         => None
+    })
+
+  pure def creates(ctx: LocalContext, i: Id): Transition = {
+    post_state: { ...ctx.state,
+      promises: ctx.state.promises.put(i, { settled: None, callbacks: Set() }),
+      runnable: ctx.state.runnable.union(Set(i)) },
+    effects: Set(),
+  }
+
+  /// A pending promise settles, once, to whatever it was told.
+  pure def listen_resolve(ctx: LocalContext): Set[{ id: Id, value: Value }] =
+    if (ctx.state.role != Server) Set() else
+    ctx.messages.filterMap(m => match m {
+      | Resolve(r) => if (pending(ctx, r.id)) Some(r) else None
       | _          => None
     })
 
-  pure def begins(ctx: LocalContext, id: Id): Transition = {
-    post_state: { ...ctx.state, phase: Holding({ id: id, pc: Start }) },
+  pure def resolves(ctx: LocalContext, r: { id: Id, value: Value }): Transition = {
+    post_state: { ...ctx.state,
+      promises: ctx.state.promises.set(r.id,
+        { ...ctx.state.promises.get(r.id), settled: Some(r.value) }),
+      runnable: ctx.state.runnable.exclude(Set(r.id)) },
     effects: Set(),
   }
 
-  /// Run one instruction. Awaiting parks the invocation WITH its continuation;
-  /// returning ends it and tells whoever is listening.
-  pure def executes(ctx: LocalContext): Set[Transition] =
-    match ctx.state.phase {
-      | Holding(c) =>
-          match proceed(c) {
-            | Await(child) => Set({
-                post_state: { ...ctx.state, phase: Parked({ cont: c, awaited: child }) },
-                effects: Set(choreo::Broadcast(Invoke(child))),
-              })
-            | Return(v) => Set({
-                post_state: { ...ctx.state, phase: Returned(v) },
-                effects: Set(choreo::Broadcast(Completed({ id: c.id, value: v }))),
-              })
-          }
-      | _ => Set()
-    }
+  /// A name to answer when a pending promise settles.
+  pure def listen_callback(ctx: LocalContext): Set[{ awaited: Id, awaiter: Id }] =
+    if (ctx.state.role != Server) Set() else
+    ctx.messages.filterMap(m => match m {
+      | Callback(c) =>
+          if (and { pending(ctx, c.awaited), pending(ctx, c.awaiter),
+                    not(ctx.state.promises.get(c.awaited).callbacks.contains(c.awaiter)) })
+            Some(c) else None
+      | _ => None
+    })
 
-  /// The awaited invocation answered. Resuming is picking the continuation back
-  /// up off the stack it was on, so the cue hands the act everything it needs.
-  pure def listen_completion(ctx: LocalContext): Set[{ cont: Cont, value: int }] =
-    match ctx.state.phase {
-      | Parked(p) =>
-          ctx.messages.filterMap(m => match m {
-            | Completed(r) => if (r.id == p.awaited) Some({ cont: p.cont, value: r.value }) else None
-            | _            => None
-          })
-      | _ => Set()
-    }
-
-  pure def resumes(ctx: LocalContext, r: { cont: Cont, value: int }): Transition = {
-    post_state: { ...ctx.state, phase: Holding({ ...r.cont, pc: Resumed(r.value) }) },
+  pure def registers(ctx: LocalContext, c: { awaited: Id, awaiter: Id }): Transition = {
+    post_state: { ...ctx.state,
+      promises: ctx.state.promises.set(c.awaited,
+        { ...ctx.state.promises.get(c.awaited),
+          callbacks: ctx.state.promises.get(c.awaited).callbacks.union(Set(c.awaiter)) }),
+      runnable: ctx.state.runnable.exclude(Set(c.awaiter)) },
     effects: Set(),
   }
+
+  // ----------------------------------------------------------- the background
+  //
+  // No request, no message: the server owes this to itself, and does it when
+  // its own state says it is due.
+
+  /// A settled promise still carrying a name answers it: the name is struck, and
+  /// whoever it belongs to has a turn coming -- unless they have settled in the
+  /// meantime, in which case there is nobody left to give a turn to.
+  pure def drains(ctx: LocalContext): Set[Transition] =
+    if (ctx.state.role != Server) Set() else
+    ctx.state.promises.keys()
+      .filter(i => ctx.state.promises.get(i).settled != None)
+      .map(i => ctx.state.promises.get(i).callbacks.map(w => { awaited: i, awaiter: w }))
+      .flatten()
+      .map(c => {
+        post_state: { ...ctx.state,
+          promises: ctx.state.promises.set(c.awaited,
+            { ...ctx.state.promises.get(c.awaited),
+              callbacks: ctx.state.promises.get(c.awaited).callbacks.exclude(Set(c.awaiter)) }),
+          runnable: if (pending(ctx, c.awaiter)) ctx.state.runnable.union(Set(c.awaiter))
+                    else ctx.state.runnable },
+        effects: Set(),
+      })
 
   pure def main_listener(ctx: LocalContext): Set[Transition] = Set(
-    choreo::cue(ctx, listen_invoke, begins),
-    executes(ctx),
-    choreo::cue(ctx, listen_completion, resumes),
+    sends(ctx),
+    choreo::cue(ctx, listen_create, creates),
+    choreo::cue(ctx, listen_resolve, resolves),
+    choreo::cue(ctx, listen_callback, registers),
+    drains(ctx),
   ).flatten()
 
   // --------------------------------------------------------------- the system
 
   pure def apply_custom_effect(env: GlobalContext, e: CustomEffects): GlobalContext = env
 
-  /// The root is the top-level call: it is holding its continuation from the
-  /// first instant. Everything else waits to be invoked.
   pure def initialize(n: Node): LocalState = {
     process_id: n,
-    phase: if (n == ROOT) Holding({ id: n, pc: Start }) else Unborn,
+    role: if (n == SERVER) Server else Client,
+    promises: Map(),
+    runnable: Set(),
   }
 
   action init = choreo::init({
-    system:     IDS.mapBy(n => initialize(n)),
-    messages:   IDS.mapBy(n => Set()),
-    events:     IDS.mapBy(n => Set()),
+    system:     NODES.mapBy(n => initialize(n)),
+    messages:   NODES.mapBy(n => Set()),
+    events:     NODES.mapBy(n => Set()),
     extensions: (),
   })
 
@@ -118,40 +179,30 @@ module abstract {
 
   action step_with(v: Node, listener: LocalContext => Set[Transition]): bool =
     choreo::step_with(v, listener, apply_custom_effect)
-  def with_cue(process, listen_fn, params) = choreo::with_cue(process, listen_fn, params)
-  action perform(cue_ctx, upon_fn) = choreo::perform(cue_ctx, upon_fn, apply_custom_effect)
 
   // ------------------------------------------------------------- what holds
 
-  /// The answer.
-  val answered = s.system.get(ROOT).phase == Returned(ANSWER)
+  val store: Id -> Promise = s.system.get(SERVER).promises
+  val runnable: Set[Id] = s.system.get(SERVER).runnable
 
-  /// A parked invocation is still holding its OWN continuation. Nothing is ever
-  /// mid-await with nothing to come back to -- which here is true by
-  /// construction, because there is no way to put a continuation anywhere else.
-  val continuationStaysHome = IDS.forall(i =>
-    match s.system.get(i).phase {
-      | Parked(p)  => p.cont.id == i
-      | Holding(c) => c.id == i
-      | _          => true
-    })
+  /// A settled promise carries no name it has not answered -- eventually. What
+  /// holds at every state is the weaker thing: a name is only ever registered
+  /// on a promise that was pending when it was registered.
+  val callbacksOnlyOnKnownPromises =
+    store.keys().forall(i => store.get(i).callbacks.forall(w => store.keys().contains(w)))
 
-  /// Whatever the root returns, it returns the answer.
-  val noWrongAnswer =
-    match s.system.get(ROOT).phase {
-      | Returned(v) => v == ANSWER
-      | _           => true
-    }
+  /// Nothing is runnable that does not exist, and nothing settled is runnable.
+  val runnableIsLive = runnable.forall(i => and {
+    store.keys().contains(i),
+    store.get(i).settled == None,
+  })
 
-  // ------------------------------------------------------------- the trace
+  // -------------------------------------------------------- what may happen
 
-  run executionTest =
-    init
-      .then(step_with(ROOT, executes))                                 // f awaits g
-      .then(CHILD.with_cue(listen_invoke, CHILD).perform(begins))      // g is called
-      .then(step_with(CHILD, executes))                                // g returns 41
-      .then(ROOT.with_cue(listen_completion,
-                          { cont: { id: ROOT, pc: Start }, value: 41 }).perform(resumes))
-      .then(step_with(ROOT, executes))                                 // f returns 42
-      .expect(answered)
+  val someoneSettled = store.keys().exists(i => store.get(i).settled != None)
+  val someoneWaited  = store.keys().exists(i => store.get(i).callbacks != Set())
+  val someoneDrained = store.keys().exists(i => and {
+    store.get(i).settled != None,
+    runnable != Set(),
+  })
 }

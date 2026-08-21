@@ -3,35 +3,32 @@
 #
 #   ./check.sh
 #
-# `abstract.qnt` runs the program with one process per invocation; `concrete.qnt`
-# fragments the same program across a server and two workers. Both run
-# `workflow.qnt` and nothing else, so every difference is a difference in the
-# runtime.
+# `abstract.qnt` is the specification: a server that handles a request when one
+# arrives and does its background work when that is enabled. `concrete.qnt` is
+# one way of running it: a server that keeps the store and workers that keep
+# nothing. They share no line of code, and the second one has continuations
+# because it has to.
 set -uo pipefail
 cd "$(dirname "$0")"
 
 SAMPLES=${SAMPLES:-20000}
-DEPTH=${DEPTH:-25}
 
 echo "== types =="
-for m in workflow abstract concrete; do quint typecheck $m.qnt || exit 1; done
+for m in abstract concrete; do quint typecheck $m.qnt || exit 1; done
 echo "  ok"
 
-echo "== the traces =="
-quint test abstract.qnt --match executionTest  || exit 1
-quint test concrete.qnt --match fragmentedTest || exit 1
+echo "== the specification =="
+quint run abstract.qnt --verbosity=1 --max-steps=20 --max-samples="$SAMPLES" \
+      --invariants callbacksOnlyOnKnownPromises runnableIsLive || exit 1
+quint run abstract.qnt --verbosity=1 --max-steps=20 --max-samples="$SAMPLES" \
+      --witnesses someoneSettled someoneWaited someoneDrained || exit 1
 
-echo "== the abstract machine =="
-quint run abstract.qnt --verbosity=1 --max-steps=15 --max-samples="$SAMPLES" \
-      --invariants noWrongAnswer continuationStaysHome || exit 1
-quint run abstract.qnt --verbosity=1 --max-steps=15 --max-samples="$SAMPLES" \
-      --witnesses answered || exit 1
-
-echo "== the concrete machine =="
-quint run concrete.qnt --verbosity=1 --max-steps="$DEPTH" --max-samples="$SAMPLES" \
-      --invariant=noWrongAnswer || exit 1
-# What fragmenting an execution buys, and what it costs. The first two are the
-# point; the last two are the price, and neither is expressible upstairs.
-quint run concrete.qnt --verbosity=1 --max-steps="$DEPTH" --max-samples="$SAMPLES" \
-      --witnesses answered fragmentsSplit inTheStoreAndNowhereElse \
-                  sameFragmentTwice stranded
+echo "== the implementation =="
+# The specification's one law, asked of a machine that continues executions on
+# machines that never began them.
+quint run concrete.qnt --verbosity=1 --max-steps=25 --max-samples="$SAMPLES" \
+      --invariant=observationsAreTruthful || exit 1
+# What fragmenting an execution looks like, and what it costs.
+quint run concrete.qnt --verbosity=1 --max-steps=40 --max-samples="$SAMPLES" \
+      --witnesses fragmentsSplit inTheStoreAndNowhereElse \
+                  sameFragmentTwice rerunDecidedDifferently stranded

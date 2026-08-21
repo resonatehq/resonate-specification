@@ -1,58 +1,60 @@
-# The fragmented continuation
-
-Two Choreo machines running the same program:
-
-```
-f() { val v = await g(); return v + 1 }
-g() { return 41 }
-```
+# A specification, and one way of running it
 
 | | |
 |---|---|
-| `workflow.qnt` | the program, and the `Cont` type. Shared, so every difference below is a difference in the RUNTIME. |
-| `abstract.qnt` | one process per invocation. A continuation never leaves the process it was born in. |
-| `concrete.qnt` | a server holding the store, and two workers holding nothing. One execution, many fragments. |
+| `abstract.qnt` | THE SPECIFICATION. A server that handles a request when one arrives, and does its background work when that is enabled. |
+| `concrete.qnt` | THE IMPLEMENTATION. A server that keeps the store, and workers that keep nothing between one piece of work and the next. |
 | `choreo.qnt`, `spells/`, `template.qnt` | the framework, vendored |
 
-## The difference is in the message type
+**They share nothing.** Not a type, not a handler, not an identifier. One says
+what may happen; the other is one way of making it happen. Anything held in
+common would make the comparison between them unaskable — the same reason
+`tla/Concrete.tla` writes out handlers it could have imported.
 
-That is the whole thing, and it is visible without reading a single transition.
+And they are not two versions of one thing. A specification describes a world of
+possibilities: any request may arrive, in any order, and the background work
+happens whenever the server's own state says it may. An implementation is a
+machine — it has workers, dispatch, an inbox, and a story about what happens
+when a machine dies in the middle.
 
-```quint
-// abstract.qnt
-type Message =
-  | Invoke(Id)
-  | Completed({ id: Id, value: int })
+## The continuation is implementation machinery
 
-// concrete.qnt
-type Message =
-  | Execute({ id: Id, cont: Cont })                 // server -> worker
-  | Suspends({ id: Id, cont: Cont, awaited: Id })   // worker -> server
-  | Resolves({ id: Id, value: int })
-```
+The specification never asks where a program has got to. A promise settles once;
+a callback is a name to answer when it does; work becoming runnable is something
+the server does to itself. There is no continuation anywhere in the file, and
+nothing is missing.
 
-Upstairs a continuation is **not sendable**. There is no constructor that
-carries one, so it cannot go anywhere, so one execution is one process from
-beginning to end. An `await` parks the process — `Parked({ cont, awaited })` —
-and the continuation sits there on its stack until the answer arrives. That is
-what an ordinary async runtime gives you.
-
-Downstairs a continuation is **a value on the wire**. A worker takes one
-fragment, runs it to the next await, hands what remains back to the server, and
-sets `running: None` — it forgets. The server writes the continuation into the
-store as `Blocked(cont)`, and when the awaited promise settles it *re-forms*
-that continuation with the value it was missing:
+The implementation cannot avoid one. It hands a piece of an execution to a
+worker, takes back what remains, and hands *that* to whichever worker is free:
 
 ```quint
-| Blocked(c) => acc.set(a, { ...acc.get(a), task: Ready({ ...c, pc: Resumed(v) }) })
+type Cont = { id: Id, seen: Set[Seen] }   // an execution, and what it already knows
+
+type Message =
+  | Invokes(Id)                             // client -> server
+  | Execute({ cont: Cont })                 // server -> worker
+  | Suspends({ cont: Cont, awaited: Id })   // worker -> server
+  | Resolves({ id: Id, value: Value })      // worker -> server
 ```
 
-and dispatches it again — to whichever worker is free. **The same execution runs
-on two machines**, and the store is what makes it one execution.
+Two of those carry a continuation, so here what remains of an execution is **a
+value on the wire** — it outlives the machine that made it. A worker sets
+`running: None` in the same step that sends it away; the server writes it down
+as `Blocked(cont)`; and when the awaited promise settles, the server *re-forms*
+it with the value it was missing and hands it out again:
 
-Being durable and being fragmented are the same fact: a continuation that can
-outlive the machine that made it is a continuation that can be picked up
-somewhere else.
+```quint
+| Blocked(cont) => struck.set(c.awaiter, { ...awaiter, task: Ready({ ...cont,
+    seen: cont.seen.union(Set({ from: c.awaited, value: awaited.settled.unwrap() })) }) })
+```
+
+Upstairs that same moment is a name being struck and a turn being owed. Being
+durable and being fragmented are one fact, and this is where it is visible.
+
+The implementation does not know what the program does, any more than the
+specification knows which request will arrive next: a worker running a piece may
+find that it awaits anything, or returns anything, and every possibility is
+offered.
 
 ## Running it
 
@@ -63,39 +65,44 @@ somewhere else.
 `choreo.qnt`, `template.qnt` and `spells/` are vendored verbatim from
 [informalsystems/choreo](https://github.com/informalsystems/choreo) (Apache-2.0,
 Gabriela Moreira, Josef Widder and Yassine Boukhari, Informal Systems) — the
-same arrangement `tla/` has with `Variants.tla` and `Apalache.tla`, and for the
-same reason: the dependency is on the definitions, not on a tool.
+same arrangement `tla/` has with `Variants.tla` and `Apalache.tla`.
 
-## What it shows
+## What came out
 
-Simulation, 20 000 behaviours; plus two scripted traces that walk the whole
-execution deterministically (`executionTest`, `fragmentedTest`).
+Simulation, 20 000 behaviours each.
 
-| | abstract | concrete |
-|---|---|---|
-| `noWrongAnswer` — the root returns 42 or has not returned | holds | holds |
-| `answered` — it gets there | 100% of traces | 4.6% |
-| `fragmentsSplit` — one execution ran on two machines | *unsayable* | **30%** |
-| `inTheStoreAndNowhereElse` — no machine holds it and it is not lost | *unsayable* | 99.7% |
-| `sameFragmentTwice` — a worker re-ran a fragment | *unsayable* | **99.98%** |
-| `stranded` — a continuation parked on an already-settled promise | *unsayable* | **78%** |
+**The specification** holds its own laws: a name is only ever registered on a
+promise that exists, and nothing settled or absent is ever runnable. Promises
+settle (98% of behaviours), names get registered (8%), and the background drain
+runs (74%) — so none of it is vacuous.
 
-The first two rows are the ones that agree. The other four are the ones the
-abstraction was hiding, and they cannot even be *stated* upstairs: there is no
-second machine for an execution to move to, so there is nothing to ask.
+**The implementation** holds the specification's one substantive law:
 
-### What fragmenting costs
+> `observationsAreTruthful` — everything a continuation claims to know, it
+> learned from a promise that really did settle to that.
 
-**A fragment can run twice.** A worker takes work from a message soup that never
-forgets, and it has no store to ask whether the fragment is still wanted. So it
-can pick up one it has already run. Nothing here stops it.
+which is the interesting obligation, because this machine carries on executions
+on machines that never began them.
 
-**And a stale fragment can strand a live one.** The second run sends its
-`Suspends` late, and the server accepts it because the only thing it fences on
-is the task's own state. The continuation it parks is the OLD one, and by then
-the awaited promise has already settled — so nothing will ever wake it. That is
-`stranded`, and it is a permanent lost update, not a transient state.
+| | |
+|---|---|
+| `fragmentsSplit` — two machines, one execution | 11% |
+| `inTheStoreAndNowhereElse` — held by nobody, lost by nobody | 48% |
+| `sameFragmentTwice` — a worker re-ran a piece | **98%** |
+| `rerunDecidedDifferently` — and decided *differently* | **95%** |
+| `stranded` — a continuation parked on a promise that already settled | **39%** |
 
-Both are exactly what the lease and the fencing version in `../concrete.qnt` are
-for. This pair is where the need for them becomes visible; that pair is where
-they are modelled.
+The last three are the price of fragmenting, and none of them can be *stated*
+upstairs: there are no pieces there, and no machines for them to be on.
+
+`rerunDecidedDifferently` is the one worth sitting with. A worker takes work from
+an inbox that never forgets and has no store to ask whether the work is still
+wanted, so it re-runs a piece — and since it does not know what the program does,
+the second run may decide something else entirely. The law survives anyway,
+because what an execution did is a RECORD in the store rather than something
+recomputed. That is what a promise is for.
+
+`stranded` is where it does bite: the stale run's `Suspends` lands on a task that
+had moved on, parking the OLD continuation on a promise that has already settled,
+and nothing will wake it. A lease and a fencing version are the answer, and
+`../concrete.qnt` is where they are modelled.
