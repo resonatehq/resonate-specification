@@ -76,6 +76,8 @@ def stepMutants : List (String × Bool) :=
   let C : Schedule := { id := oid "c", cron := "* * * * *", promiseId := oid "p", promiseTimeout := 100,
                         promiseParam := {}, promiseTags := [], nextRunAt := 60, createdAt := 10 }
   let ex : OutboxEntry := { address := "w", message := .execute (oid "a") 3 }
+  -- A race at `a` over the one child `b`.
+  let RC : PromiseObject := { P with tags := raceTags, param := childrenParam [oid "b"] }
   [ ("preserved_promise_birth_fields_immutable",
        preserved_promise_birth_fields_immutable 0 { objects := [objOf (oid "a") (P)] } { objects := [objOf (oid "a") ({ P with timeoutAt := 9999 })] }),
     ("preserved_settled_promise_record/state_moved",
@@ -173,6 +175,32 @@ def stepMutants : List (String × Bool) :=
        consistent_new_promise_born_clean 50 { } { objects := [objOf (oid "a") ({ P with callbacks := [oid "x"] })] }),
     ("consistent_new_promise_born_clean/born_in_the_future",
        consistent_new_promise_born_clean 5 { } { objects := [objOf (oid "a") (P)] }),
+    -- The third birth shape is a COMBINATOR's. A promise born resolved
+    -- with a value and no combinator tag is the shape the widened
+    -- entry must still refuse.
+    ("consistent_new_promise_born_clean/born_decided_without_the_tag",
+       consistent_new_promise_born_clean 50 { }
+         { objects := [objOf (oid "a")
+             ({ P with state := .resolved, value := { data := some "o:b" },
+                       settledAt := some 10 })] }),
+    -- A race that settles before any child has: `b` is pending in the
+    -- pre-state, so the rule returns `none` and there is no verdict the
+    -- row could be carrying.
+    ("consistent_combinator_settlement_matches_rule/settled_before_any_child",
+       consistent_combinator_settlement_matches_rule 50
+         { objects := [objOf (oid "a") RC, objOf (oid "b") P] }
+         { objects := [objOf (oid "a")
+             ({ RC with state := .resolved, value := Value.ofIds [oid "b"],
+                        settledAt := some 50 }),
+            objOf (oid "b") P] }),
+    -- And one that settles on the right occasion with the wrong answer:
+    -- `b` HAS settled, so the rule fires, but the row names nobody.
+    ("consistent_combinator_settlement_matches_rule/settled_with_no_winner",
+       consistent_combinator_settlement_matches_rule 50
+         { objects := [objOf (oid "a") RC, objOf (oid "b") S0] }
+         { objects := [objOf (oid "a")
+             ({ RC with state := .resolved, settledAt := some 50 }),
+            objOf (oid "b") S0] }),
     ("consistent_task_birth_state",
        consistent_task_birth_state 0 { } { objects := [objWith (oid "a") PT ({ T with state := .suspended, retryTimeoutAt := none })] }),
     ("consistent_task_lease_released_atomically",
@@ -300,6 +328,18 @@ def internalWellFormedRun (w : List (Step × Nat)) : Bool :=
 
 theorem stage3_internal_sweep :
     ((seqsUpToA kernelsResp 3).map instantiateA).all internalWellFormedRun = true := by decide
+
+/-- The transition `consistent_combinator_settlement_matches_rule` is
+    about: a combinator pending in `a` and settled in `b`. Without it
+    the entry passes on a corpus that never settles one, which is not
+    the same as holding. -/
+theorem reaches_combinator_settlement :
+    stepWitnesses battery (fun a b =>
+      a.objects.any fun o =>
+        o.promise.otype == .combinator && o.promise.state == .pending
+          && (match b.promise? o.id with
+              | none   => false
+              | some q => q.state != .pending)) = true := by decide
 
 theorem reaches_internal_steps :
     (battery.any fun w => (allSteps w).any (fun (st, _, _, _) => Step.isInternal st)) = true := by decide

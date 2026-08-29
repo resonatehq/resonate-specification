@@ -407,6 +407,24 @@ structure Hereditary (g : Q) (a : ServerState) : Prop where
                    a.objects.find? (·.id == id) = none →
                    g.promise id { state := .pending, param := param, tags := tags,
                                   timeoutAt := timeoutAt, createdAt := createdAt } = true
+  /-- The third birth: a combinator whose children had already settled
+      when it was created. Resolved at `createdAt`, deadline still
+      ahead, and the only birth that carries a value.
+
+      `st.settable` rather than `st = .resolved`, because what the
+      obligation may assume is what the RULES guarantee, and
+      `ServerModel.verdict_settles` is the theorem that says a rule
+      never answers `pending` or `rejectedTimedout`. Add a rule that
+      rejects and this obligation still holds; add one that leaves a
+      promise pending and `verdict_settles` stops compiling first. -/
+  decided      : ∀ (id : ServerModel.Ident) (param : ServerModel.Value) (tags : ServerModel.Tags)
+                   (timeoutAt createdAt : Nat) (st : ServerModel.PromiseState)
+                   (v : ServerModel.Value),
+                   createdAt < timeoutAt → st.settable = true →
+                   a.objects.find? (·.id == id) = none →
+                   g.promise id { state := st, param := param, value := v, tags := tags,
+                                  timeoutAt := timeoutAt, createdAt := createdAt,
+                                  settledAt := some createdAt } = true
   dead         : ∀ (id : ServerModel.Ident) (st : ServerModel.PromiseState)
                    (param : ServerModel.Value) (tags : ServerModel.Tags) (timeoutAt : Nat),
                    st = (if tags.isTimer then .resolved else .rejectedTimedout) →
@@ -833,6 +851,134 @@ theorem writesGood_afterMatReadObjectP {α} {e : Env} (hq : Hereditary g e.state
     WritesGood g e (withMat b (readObject id now) >>= f) :=
   writesGood_afterMatReadObject hq b hs id now f hnone
     (fun o ho => hsome o (QObj_promise ho))
+
+/-! ### The resume read
+
+`readResumeObject` is `readTaskObject` with a wider guard — a row takes
+a resume when it has a task OR is a combinator. The guard writes
+nothing, so the argument is the same one twice and both facts survive
+it. -/
+
+theorem readResumeObject_fst_some {id : ServerModel.Ident} {now : Nat} {e : Env} {u : Object}
+    (h : (readResumeObject id now e).1 = some u) : (readObject id now e).1 = some u := by
+  revert h
+  unfold readResumeObject
+  rw [bind_fst, getObject_fst]
+  cases hf : e.state.objects.find? (·.id == id) with
+  | none => intro hh; simp [pure] at hh
+  | some o =>
+      show ((if o.task.isSome ∨ o.promise.otype == .combinator then readObject id now
+              else pure none) e).1 = _ → _
+      by_cases hto : o.task.isSome ∨ o.promise.otype == ServerModel.OType.combinator
+      · rw [if_pos hto]; exact fun hh => hh
+      · rw [if_neg hto]; intro hh; simp [pure] at hh
+
+theorem writesGood_readResumeObject {e : Env} (hq : Hereditary g e.state)
+    (hs : PerStore g e.state = true) (id : ServerModel.Ident) (now : Nat) :
+    WritesGood g e (readResumeObject id now) := by
+  unfold readResumeObject
+  refine writesGood_bind' _ _ _ _ (writesGood_getObject _ _ _) ?_
+  rw [getObject_fst]
+  split
+  · exact writesGood_pure _ _ _
+  · exact writesGood_ite _ _ _ _ _ (writesGood_readObject hq hs id now)
+      (writesGood_pure _ _ _)
+
+theorem writesGood_afterMatReadResumeObject {α} {e : Env} (hq : Hereditary g e.state)
+    (b : Bool) (hs : PerStore g e.state = true) (id : ServerModel.Ident) (now : Nat)
+    (f : Option Object → H α)
+    (hnone : WritesGood g e (f none))
+    (hsome : ∀ o, QObj g o = true → NotDue now o.promise → Stored e.state o.id →
+               WritesGood g e (f (some o))) :
+    WritesGood g e (withMat b (readResumeObject id now) >>= f) := by
+  refine writesGood_bind' _ _ _ _
+    (writesGood_readResumeObject (e := { e with mat := b }) hq hs id now) ?_
+  show WritesGood g e (f ((readResumeObject id now { e with mat := b }).1))
+  cases h : (readResumeObject id now { e with mat := b }).1 with
+  | none => exact hnone
+  | some u =>
+      have h' := readResumeObject_fst_some h
+      exact hsome u (returnsGood_readObject (e := { e with mat := b }) hq hs id now u h')
+        (readObject_notDue id now { e with mat := b } u h')
+        (readObject_stored id now { e with mat := b } u h')
+
+/-! ### The three combinator helpers
+
+`settledChildren` reads and writes nothing of its own; `awaitChildren`
+writes one `addCallback` per pending child; `combinatorBirth` is the
+first behind a `pure`. All three are list recursions in the shape
+`checkAwaited` and `registerAwaited` already have. -/
+
+theorem writesGood_settledChildren {e : Env} (hq : Hereditary g e.state)
+    (hs : PerStore g e.state = true) (now : Nat) :
+    ∀ cs, WritesGood g e (settledChildren now cs)
+  | []      => by rw [settledChildren]; exact writesGood_pure _ _ _
+  | c :: cs => by
+      rw [settledChildren]
+      refine writesGood_afterReadObjectP hq hs _ _ _ (fun _ => ?_) ?_
+      · exact writesGood_settledChildren hq hs now cs
+      · intro p hp _ _
+        dsimp only
+        refine writesGood_ite _ _ _ _ _ ?_ (writesGood_settledChildren hq hs now cs)
+        exact writesGood_bind' _ _ _ _ (writesGood_settledChildren hq hs now cs)
+          (writesGood_pure _ _ _)
+
+theorem writesGood_awaitChildren {e : Env} (hq : Hereditary g e.state)
+    (hs : PerStore g e.state = true) (parent : ServerModel.Ident) (now : Nat) :
+    ∀ cs, WritesGood g e (awaitChildren parent now cs)
+  | []      => by rw [awaitChildren]; exact writesGood_pure _ _ _
+  | c :: cs => by
+      rw [awaitChildren]
+      refine writesGood_afterReadObjectP hq hs _ _ _ (fun _ => ?_) ?_
+      · dsimp only
+        exact writesGood_bind' _ _ _ _ (writesGood_pure _ _ _)
+          (writesGood_awaitChildren hq hs parent now cs)
+      · intro p hp _ hsto
+        dsimp only
+        refine writesGood_ite _ _ _ _ _ ?_ ?_
+        · exact writesGood_bind' _ _ _ _
+            (writesGood_setPromise _ _ _ _ (hq.addCallback _ p.promise _ hsto hp))
+            (writesGood_awaitChildren hq hs parent now cs)
+        · exact writesGood_bind' _ _ _ _ (writesGood_pure _ _ _)
+            (writesGood_awaitChildren hq hs parent now cs)
+
+theorem writesGood_combinatorBirth {e : Env} (hq : Hereditary g e.state)
+    (hs : PerStore g e.state = true) (p : PromiseObject) (now : Nat) :
+    WritesGood g e (combinatorBirth p now) := by
+  unfold combinatorBirth
+  split
+  · exact writesGood_pure _ _ _
+  · exact writesGood_bind' _ _ _ _ (writesGood_settledChildren hq hs _ _)
+      (writesGood_pure _ _ _)
+
+/-- What a birth verdict can be. The state is `settable` — never
+    `pending`, never `rejectedTimedout` — because
+    `ServerModel.verdict_settles` says every rule answers that way, and
+    that is exactly the hypothesis `Hereditary.decided` needs. -/
+theorem combinatorBirth_settable {p : PromiseObject} {now : Nat} {e : Env}
+    {st : ServerModel.PromiseState} {v : ServerModel.Value}
+    (h : (combinatorBirth p now e).1 = some (st, v)) : st.settable = true := by
+  revert h
+  unfold combinatorBirth
+  cases hc : p.tags.combinator with
+  | none   => intro h; simp [pure] at h
+  | some c =>
+      rw [bind_fst]
+      intro h
+      exact ServerModel.verdict_settles c p.children _ st v h
+
+theorem writesGood_afterCombinatorBirth {α} {e : Env} (hq : Hereditary g e.state)
+    (hs : PerStore g e.state = true) (p : PromiseObject) (now : Nat)
+    (f : ServerModel.Verdict → H α)
+    (hnone : WritesGood g e (f none))
+    (hsome : ∀ st v, st.settable = true → WritesGood g e (f (some (st, v)))) :
+    WritesGood g e (combinatorBirth p now >>= f) := by
+  refine writesGood_bind' _ _ _ _ (writesGood_combinatorBirth hq hs p now) ?_
+  cases h : (combinatorBirth p now e).1 with
+  | none        => exact hnone
+  | some stv    =>
+      obtain ⟨st, v⟩ := stv
+      exact hsome st v (combinatorBirth_settable h)
 
 end Derived
 

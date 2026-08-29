@@ -108,6 +108,15 @@ mentioning schedules rather than checking it against an empty calendar.
 The Lean checker declines the same traces for the same reason
 (`valid/lean/schedules.lean`).
 
+**Combinators are absent too**, for a different reason: they are fully
+specified — `spec/01-protocol/combinators.lean` — and simply not ported
+yet. `promise.create` here neither arms a combinator's children nor
+takes its birth verdict, and the callback drain has no combinator arm,
+so a trace containing one would be compared against the wrong machine
+and could be accepted wrongly. The loader refuses any trace mentioning
+`resonate:combinator`. The Lean checker needs no such guard: it runs the
+specification itself, so it checks combinators for free.
+
 ## Partitioning, and the property it rests on
 
 Without partitioning the check is exponential in the history — 11 events

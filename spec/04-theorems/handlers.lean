@@ -88,14 +88,26 @@ theorem writesGood_createPromise (req : ServerModel.PromiseCreateReq) (now : Nat
     WritesGood g e (createPromise req now) := by
   unfold createPromise
   refine writesGood_iteH _ _ _ _ _ (fun h => ?_) (fun _ => ?_)
-  · refine writesGood_bind' _ _ _ _
-      (writesGood_setPromise _ _ _ _ (hq.live _ _ _ _ _ (by omega) hfresh)) ?_
-    repeat' first
-      | exact writesGood_pure _ _ _
-      | exact writesGood_setTask _ _ _ _ (hq.tBornPending _)
-      | apply writesGood_bind'
-      | dsimp only
-      | split
+  · dsimp only
+    split
+    · refine writesGood_bind' _ _ _ _
+        (writesGood_setPromise _ _ _ _ (hq.live _ _ _ _ _ (by omega) hfresh)) ?_
+      repeat' first
+        | exact writesGood_pure _ _ _
+        | exact writesGood_setTask _ _ _ _ (hq.tBornPending _)
+        | apply writesGood_bind'
+        | dsimp only
+        | split
+    · refine writesGood_afterCombinatorBirth hq hs _ _ _ ?_ ?_
+      · exact writesGood_bind' _ _ _ _
+          (writesGood_setPromise _ _ _ _ (hq.live _ _ _ _ _ (by omega) hfresh))
+          (writesGood_bind' _ _ _ _ (writesGood_awaitChildren hq hs _ _ _)
+            (writesGood_pure _ _ _))
+      · intro st v hset
+        exact writesGood_bind' _ _ _ _
+          (writesGood_setPromise _ _ _ _
+            (hq.decided _ _ _ _ _ _ _ (by omega) hset hfresh))
+          (writesGood_pure _ _ _)
   · refine writesGood_bind' _ _ _ _
       (writesGood_setPromise _ _ _ _ (hq.dead _ _ _ _ _ (by split <;> simp) hfresh)) ?_
     repeat' first
@@ -122,12 +134,31 @@ theorem writesGood_promiseGet (req : ServerModel.PromiseGetReq) (now : Nat) :
   · exact writesGood_pure _ _ _
   · intro p hp _ _; exact writesGood_pure _ _ _
 
+/-- `checkAwaited`'s shape again, for the children of a combinator: a
+    read per element and no write anywhere. -/
+theorem writesGood_childrenAwaitable (now : Nat) :
+    ∀ cs, WritesGood g e (childrenAwaitable now cs)
+  | []      => by rw [childrenAwaitable]; exact writesGood_pure _ _ _
+  | c :: cs => by
+      rw [childrenAwaitable]
+      refine writesGood_afterReadObjectP hq hs _ _ _ (fun _ => ?_) ?_
+      · exact writesGood_pure _ _ _
+      · intro p hp _ _
+        dsimp only
+        exact writesGood_ite _ _ _ _ _ (writesGood_childrenAwaitable now cs)
+          (writesGood_pure _ _ _)
+
 theorem writesGood_promiseCreate (req : ServerModel.PromiseCreateReq) (now : Nat) :
     WritesGood g e (promiseCreate req now) := by
   unfold promiseCreate
   wg_guard
+  wg_guard
   refine writesGood_afterReadObjectP hq hs _ _ _ (fun hfresh => ?_) ?_
-  · exact writesGood_bind' _ _ _ _ (writesGood_createPromise hq hs _ _ hfresh)
+  · dsimp only
+    refine writesGood_bind' _ _ _ _ (writesGood_childrenAwaitable hq hs _ _) ?_
+    refine writesGood_ite _ _ _ _ _ (writesGood_pure _ _ _) ?_
+    refine writesGood_pureBind _ _ _ _ ?_
+    exact writesGood_bind' _ _ _ _ (writesGood_createPromise hq hs _ _ hfresh)
       (writesGood_pure _ _ _)
   · intro p hp _ _; exact writesGood_pure _ _ _
 
@@ -140,6 +171,8 @@ theorem writesGood_promiseSettle (req : ServerModel.PromiseSettleReq) (now : Nat
   · exact writesGood_pure _ _ _
   · intro p ho hdue hsto
     have hp : g.promise p.id p.promise = true := QObj_promise ho
+    refine writesGood_iteH _ _ _ _ _ (fun _ => writesGood_pure _ _ _) (fun _ => ?_)
+    refine writesGood_pureBind _ _ _ _ ?_
     refine writesGood_iteH _ _ _ _ _ (fun hpend => ?_) (fun _ => writesGood_pure _ _ _)
     exact writesGood_bind' _ _ _ _
       (writesGood_setSettled hq _ ho _
@@ -204,7 +237,7 @@ theorem writesGood_taskCreate (req : ServerModel.TaskCreateReq) (now : Nat) :
   -- leave `isTimer` false. The born-dead branch below needs it.
   have hnotimer : req.action.tags.isTimer = false := by
     have h1 : ¬ ((req.action.tags.otype != .runnable) = true) := fun h => hgd (Or.inl h)
-    have h2 : ¬ (req.action.tags.timerTargeted = true) := fun h => hgd (Or.inr h)
+    have h2 : ¬ (req.action.tags.timerTargeted = true) := fun h => hgd (Or.inr (Or.inl h))
     have htgt : req.action.tags.has "resonate:target" = true := by
       simp at h1
       exact (ServerModel.otype_runnable_iff_targeted _).mp h1
@@ -448,7 +481,8 @@ theorem writesGood_scheduleCreate (req : ServerModel.ScheduleCreateReq) (now : N
   split
   · exact writesGood_pure _ _ _
   · exact writesGood_bind' _ _ _ _
-      (writesGood_setSchedule _ _ _ (hq.cBorn _ _ _ _ _ _ _ (by simpa using htt)))
+      (writesGood_setSchedule _ _ _
+        (hq.cBorn _ _ _ _ _ _ _ (by have h := htt; simp at h; exact h.1)))
       (writesGood_pure _ _ _)
 
 theorem writesGood_scheduleDelete (req : ServerModel.ScheduleDeleteReq) (now : Nat) :
@@ -472,27 +506,66 @@ theorem writesGood_processPromiseTimeout (req : ServerModel.PromiseTimeoutReq) (
   · exact writesGood_pure _ _ _
   · intro p hp _ _; exact writesGood_pure _ _ _
 
+/-- The task half of a resume, lifted out of `resumeOne` along with the
+    definition. Nothing here changed: same three arms, same three
+    obligations. -/
+theorem writesGood_resumeTask (o : Object) (t : TaskObject) (ht : g.task t = true)
+    (awaited : ServerModel.Ident) (now : Nat) :
+    WritesGood g e (Internal.resumeTask o t awaited now) := by
+  unfold Internal.resumeTask
+  split
+  · rename_i hsusp
+    exact writesGood_setTask _ _ _ _ (hq.tResume t _ _ hsusp ht)
+  all_goals
+    first
+      | exact writesGood_pure _ _ _
+      | (rename_i hst
+         refine writesGood_iteH _ _ _ _ _ (fun hc => ?_) (fun _ => writesGood_pure _ _ _)
+         exact writesGood_setTask _ _ _ _
+           (hq.tAddResume t _ (by simp [hst]) (by simp [hst]) (by simpa using hc) ht))
+
+/-- The combinator half. One write, and it is the SAME obligation a
+    client settle discharges — `Hereditary.settle`, needing a settable
+    state, a pending row and a deadline still ahead.
+
+    All three come from where they always come from. Settable is
+    `ServerModel.verdict_settles`, a fact about the rules. Pending is
+    the guard the step opens with. And the deadline is `NotDue`, which
+    the read in front of the step supplies: a promise that came back
+    pending from a projecting read has `now < timeoutAt`. So a
+    combinator settlement is not a new kind of write — it is the
+    ordinary settle, reached by a different door. -/
+theorem writesGood_resumeCombinator (o : Object) (ho : QObj g o = true) (now : Nat)
+    (hdue : NotDue now o.promise) (hsto : Stored e.state o.id) (c : ServerModel.Combinator) :
+    WritesGood g e (Internal.resumeCombinator o c now) := by
+  have hp : g.promise o.id o.promise = true := QObj_promise ho
+  unfold Internal.resumeCombinator
+  refine writesGood_iteH _ _ _ _ _ (fun _ => writesGood_pure _ _ _) (fun hnp => ?_)
+  have hpend : (o.promise.state == ServerModel.PromiseState.pending) = true := by simpa using hnp
+  refine writesGood_bind' _ _ _ _
+    (writesGood_withMat _ _ _ _
+      (writesGood_settledChildren (e := { e with mat := true }) hq hs now o.promise.children)) ?_
+  generalize (withMat true (settledChildren now o.promise.children) e).1 = l
+  cases hv : ServerModel.Combinator.verdict c o.promise.children l with
+  | none  => exact writesGood_pure _ _ _
+  | some stv =>
+      obtain ⟨st, v⟩ := stv
+      exact writesGood_setSettled hq o ho _
+        (hq.settle _ o.promise st v now hsto
+          (ServerModel.verdict_settles c _ l st v hv) (by simpa using hpend) (hdue hpend) hp)
+
 theorem writesGood_resumeOne (awaited awaiter : ServerModel.Ident) (now : Nat) :
     WritesGood g e (Internal.resumeOne awaited awaiter now) := by
-  unfold Internal.resumeOne touchTaskObject
-  refine writesGood_afterMatReadTaskObject hq true hs _ _ _
+  unfold Internal.resumeOne touchResumeObject
+  refine writesGood_afterMatReadResumeObject hq true hs _ _ _
     (writesGood_pure _ _ _) ?_
-  intro o ho _ _
+  intro o ho hdue hsto
   dsimp only
   split
+  · exact writesGood_resumeCombinator hq hs o ho now hdue hsto _
+  · rename_i hcomb hteq
+    exact writesGood_resumeTask hq hs o _ (QObj_task ho hteq) _ _
   · exact writesGood_pure _ _ _
-  · rename_i t hteq
-    have ht : g.task t = true := QObj_task ho hteq
-    split
-    · rename_i hsusp
-      exact writesGood_setTask _ _ _ _ (hq.tResume t _ _ hsusp ht)
-    all_goals
-      first
-        | exact writesGood_pure _ _ _
-        | (rename_i hst
-           refine writesGood_iteH _ _ _ _ _ (fun hc => ?_) (fun _ => writesGood_pure _ _ _)
-           exact writesGood_setTask _ _ _ _
-             (hq.tAddResume t _ (by simp [hst]) (by simp [hst]) (by simpa using hc) ht))
 
 theorem writesGood_processCallback (req : ServerModel.PromiseRegisterCallbackReq) (now : Nat) :
     WritesGood g e (Internal.processCallback req now) := by

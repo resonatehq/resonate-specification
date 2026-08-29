@@ -17,7 +17,7 @@ hypotheses: the implementation is wrong, or the property is. With it,
 the failure is a bug report, and the catalogue is portable.
 
 Still `sorry`. What backs it today is two things at different strengths.
-`holds.lean` proves 31 of the 92 entries outright — every `Valid` trace
+`holds.lean` proves 31 of the 97 entries outright — every `Valid` trace
 from `init`, every schedule, every length, both read disciplines.
 The remaining 61 are backed by `properties-check.lean` and
 `properties-step.lean`: 1 464 scripts, both readings, `decide` at build
@@ -92,5 +92,15 @@ def oid (suffix : String) : ServerModel.Ident := { origin := "o", suffix }
 def extTags   : ServerModel.Tags := [("resonate:external", "true")]
 def tgtTags   : ServerModel.Tags := [("resonate:target", "w1")]
 def timerTags : ServerModel.Tags := [("resonate:timer", "true")]
+
+/-! Combinator fixtures. A combinator's tags name the rule and its param
+    IS the child list, so a create carries both: `raceTags` or `allTags`
+    for the rule, `childrenParam` for the children. -/
+
+def raceTags : ServerModel.Tags := [("resonate:combinator", "race")]
+def allTags  : ServerModel.Tags := [("resonate:combinator", "all")]
+
+def childrenParam (cs : List ServerModel.Ident) : ServerModel.Value :=
+  ServerModel.Value.ofIds cs
 
 end Abstraction

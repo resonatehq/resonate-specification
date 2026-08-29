@@ -6,6 +6,12 @@ Six steps a background job may fire: the promise timeout, the callback
 drain, the listener drain, the lease timeout, the retry dispatch, and
 the schedule.
 
+The callback drain now delivers a resume to two kinds of awaiter: a
+task, which it wakes, and a combinator, which it asks to decide again.
+Combinators added no step of their own — a combinator settles on the
+drain that was already there, which is why the alphabet, the enabling
+rule and the trace format did not have to grow.
+
 They take the FORCED reads — `touchObject` where the step persists what
 it projects, `viewObject` where it only needs to look. Neither is
 parametric: internal steps materialise under both readings of the
@@ -15,29 +21,69 @@ namespace AbstractModel
 namespace Internal
 
 
-open ServerModel (Ident nextCron occurrences expand Schedule
+open ServerModel (Ident nextCron occurrences expand Schedule Combinator
                   PromiseTimeoutReq PromiseRegisterCallbackReq PromiseRegisterListenerReq
                   TaskLeaseTimeoutReq TaskRetryTimeoutReq ScheduleTimeoutReq)
 
 def processPromiseTimeout (req : PromiseTimeoutReq) (now : Nat) : H Unit := do
   let _ ← touchObject req.id now
 
+/-- Wake the worker. The task path of a resume, unchanged: a suspended
+    task re-pends carrying the rung that woke it, a task that is already
+    running records the rung and keeps running, a fulfilled one has
+    nothing left to be told. -/
+def resumeTask (o : Object) (t : TaskObject) (awaited : Ident) (now : Nat) : H Unit :=
+  match t.state with
+  | .suspended =>
+      setTask o.id { t with state := .pending, resumes := [awaited],
+                            retryTimeoutAt := some now }
+  | .pending | .acquired | .halted =>
+      if !(t.resumes.contains awaited) then
+        setTask o.id { t with resumes := t.resumes ++ [awaited] }
+      else
+        pure ()
+  | .fulfilled =>
+      pure ()
+
+/-- Re-ask the rule. The combinator path of a resume.
+
+    The verdict is recomputed from the store rather than accumulated
+    across resumes, so nothing about a combinator is remembered between
+    drains: no counter, no set of children seen, no field on the row
+    that a crash could lose or an implementation could get out of step.
+    A resume is a TRIGGER — it says the answer may have changed — and
+    `settledChildren` is what supplies the answer.
+
+    That is also what makes the drain's schedule invisible in the
+    result. `awaited` is not read: whichever child's callback fires
+    first, the rule sees the same settled set and returns the same
+    verdict. Fire them in any order, or fire one twice, and the promise
+    settles the same way — the second time absorbing, because the guard
+    below is the same `pending` test every settle door makes.
+
+    `touchObject` inside `settledChildren`, not `readObject`: this is an
+    internal step and internal steps materialise under both readings of
+    the machine. -/
+def resumeCombinator (o : Object) (c : ServerModel.Combinator) (now : Nat) : H Unit := do
+  if o.promise.state != .pending then
+    pure ()
+  else
+    let settled ← withMat true (settledChildren now o.promise.children)
+    match c.verdict o.promise.children settled with
+    | none         => pure ()
+    | some (st, v) =>
+        setSettled o { o.promise with state := st, value := v, settledAt := some now }
+
+/-- One resume, delivered. Two kinds of awaiter can take one, and the
+    read in front declines every other row. -/
 def resumeOne (awaited awaiter : Ident) (now : Nat) : H Unit := do
-  match ← touchTaskObject awaiter now with
+  match ← touchResumeObject awaiter now with
   | none => pure ()
   | some o =>
-  match o.task with
-  | none => pure ()
-  | some t =>
-      match t.state with
-      | .suspended =>
-          setTask o.id { t with state := .pending, resumes := [awaited],
-                                retryTimeoutAt := some now }
-      | .pending | .acquired | .halted =>
-          if !(t.resumes.contains awaited) then
-            setTask o.id { t with resumes := t.resumes ++ [awaited] }
-      | .fulfilled =>
-          pure ()
+  match o.promise.tags.combinator, o.task with
+  | some c, _    => resumeCombinator o c now
+  | none, some t => resumeTask o t awaited now
+  | none, none   => pure ()
 
 def processCallback (req : PromiseRegisterCallbackReq) (now : Nat) : H Unit := do
   match ← touchObject req.awaited now with

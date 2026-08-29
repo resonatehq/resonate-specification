@@ -6,13 +6,16 @@ open ServerModel AbstractModel
 
 /-! # The axis, evaluated
 
-Three values, and each answers three questions at once:
+Four values, and each answers three questions at once:
 
-  internal   nobody outside its own call graph; nothing runs it; NO armed
-             timeout — its deadline is a projection, never a write
-  external   anyone may await it; nothing runs it; armed timeout
-  runnable   anyone may await it, and a worker is handed the execution;
-             armed timeout
+  internal    nobody outside its own call graph; nothing runs it; NO armed
+              timeout — its deadline is a projection, never a write
+  external    anyone may await it; nothing runs it; armed timeout
+  runnable    anyone may await it, and a worker is handed the execution;
+              armed timeout
+  combinator  anyone may await it; nothing runs it, and the SERVER
+              settles it by a rule over other promises; armed timeout,
+              which is what ends the wait when the rule never fires
 
 The first two columns are the doors. The third is `enabledInternal`: the
 machine owes a timeout step only where someone can be waiting for it, so
@@ -30,6 +33,7 @@ arming, against each value of the axis. -/
 private def targetTags : Tags := [("resonate:target", "poll://any@w")]
 private def externalTags : Tags := [("resonate:external", "true")]
 private def internalTags : Tags := []
+private def combTags : Tags := [("resonate:combinator", "race")]
 
 private def idOf (suffix : String) : Ident := { origin := "o", suffix := suffix }
 
@@ -43,7 +47,8 @@ private def state : ServerState :=
   { objects := [ objectWith "root" targetTags (some { state := .acquired, version := 1 })
                , objectWith "runnable" targetTags (some { state := .pending, version := 0 })
                , objectWith "external" externalTags none
-               , objectWith "internal" internalTags none ] }
+               , objectWith "internal" internalTags none
+               , objectWith "combinator" combTags none ] }
 
 private def callbackStatus (awaited : String) : Nat :=
   (run true (promiseRegisterCallback
@@ -56,14 +61,22 @@ private def listenerStatus (awaited : String) : Nat :=
 theorem otype_of_targeted : Tags.otype targetTags = .runnable := by rfl
 theorem otype_of_external : Tags.otype externalTags = .external := by rfl
 theorem otype_of_neither : Tags.otype internalTags = .internal := by rfl
+theorem otype_of_combinator : Tags.otype combTags = .combinator := by rfl
 
 theorem callback_admits_runnable : callbackStatus "runnable" = 200 := by rfl
 theorem callback_admits_external : callbackStatus "external" = 200 := by rfl
 theorem callback_refuses_internal : callbackStatus "internal" = 422 := by rfl
 
+/-- A combinator may be AWAITED — that is the whole point of one — and
+    it may not be an AWAITER through this door. The awaits-edges into a
+    combinator are written by `promise.create`, from the children its
+    param names, and a client cannot add one afterwards. -/
+theorem callback_admits_combinator : callbackStatus "combinator" = 200 := by rfl
+
 theorem listener_admits_runnable : listenerStatus "runnable" = 200 := by rfl
 theorem listener_admits_external : listenerStatus "external" = 200 := by rfl
 theorem listener_refuses_internal : listenerStatus "internal" = 422 := by rfl
+theorem listener_admits_combinator : listenerStatus "combinator" = 200 := by rfl
 
 private def latePromise (tags : Tags) : PromiseObject :=
   { state := .pending, param := {}, tags := tags, timeoutAt := 50, createdAt := 0 }
@@ -72,7 +85,8 @@ private def lateState : ServerState :=
   { objects := [ { id := idOf "runnable", promise := latePromise targetTags,
                    task := some { state := .pending, version := 0 } }
                , { id := idOf "external", promise := latePromise externalTags }
-               , { id := idOf "internal", promise := latePromise internalTags } ] }
+               , { id := idOf "internal", promise := latePromise internalTags }
+               , { id := idOf "combinator", promise := latePromise combTags } ] }
 
 private def armed (suffix : String) : Bool :=
   enabledInternal (.internal (.promiseTimeout { id := idOf suffix })) 100 lateState
@@ -80,5 +94,9 @@ private def armed (suffix : String) : Bool :=
 theorem arms_a_runnable_deadline : armed "runnable" = true := by rfl
 theorem arms_an_external_deadline : armed "external" = true := by rfl
 theorem arms_no_internal_deadline : armed "internal" = false := by rfl
+
+/-- A combinator's deadline IS armed, and it is the only thing that ends
+    a wait no rule will end — a race whose children never settle. -/
+theorem arms_a_combinator_deadline : armed "combinator" = true := by rfl
 
 end Abstraction

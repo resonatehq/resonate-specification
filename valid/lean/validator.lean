@@ -59,26 +59,12 @@ open ServerModel AbstractModel Abstraction Equivalence
 
 /-! ## Ids on the wire
 
-The specification never turns an `Ident` into a string — inside it, an id
-is a pair, and the only question asked of its halves is whether two ids
-share an origin. The checker is the edge, so the rendering lives here:
-`origin:suffix`, with exactly one colon, and a bare origin when the
-suffix is empty. `parse` is its inverse, structurally recursive over
-`toList` in the house style so nothing here is opaque to the kernel. -/
-
-def _root_.ServerModel.Ident.render (i : ServerModel.Ident) : String :=
-  if i.suffix.isEmpty then i.origin else i.origin ++ ":" ++ i.suffix
-
-private def splitColon : List Char → List Char × List Char
-  | []          => ([], [])
-  | ':' :: rest => ([], rest)
-  | c :: cs     => let (o, r) := splitColon cs; (c :: o, r)
-
-/-- An id with no colon is its own origin, which is what makes `parse`
-    the inverse of `render` on every id `render` can produce. -/
-def _root_.ServerModel.Ident.parse (s : String) : ServerModel.Ident :=
-  let (o, r) := splitColon s.toList
-  { origin := o.asString, suffix := r.asString }
+`Ident.render` and `Ident.parse` used to live here, because the checker
+was the only place an id became a string. They now live in
+`01-protocol/validation.lean`: the specification itself writes an id
+into a value — a combinator's verdict names the promises that decided
+it — so the encoding is a property of the protocol rather than of this
+consumer. What stays here is the `ToString` instance the reports use. -/
 
 instance : ToString ServerModel.Ident := ⟨ServerModel.Ident.render⟩
 

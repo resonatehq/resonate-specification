@@ -76,6 +76,18 @@ func LoadTrace(r io.Reader) ([]Op, []Response, error) {
 					"specification, so there is no calendar to check against (see valid/lean/schedules.lean)",
 				line, e.Kind)
 		}
+		// Combinators are in the specification and not yet in this port:
+		// `promise.create` here neither arms a combinator's children nor
+		// takes its birth verdict, so a trace containing one would be
+		// checked against the wrong machine and might be ACCEPTED wrongly.
+		// Refusing is the only honest answer until the port catches up
+		// (see spec/01-protocol/combinators.lean).
+		if strings.Contains(text, "resonate:combinator") {
+			return nil, nil, fmt.Errorf(
+				"line %d: trace mentions resonate:combinator; combinators are specified "+
+					"in spec/01-protocol/combinators.lean but not yet ported to this "+
+					"checker, so there is nothing here to check them against", line)
+		}
 		op, err := decodeReq(e)
 		if err != nil {
 			return nil, nil, fmt.Errorf("line %d: %w", line, err)

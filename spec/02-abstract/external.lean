@@ -32,16 +32,49 @@ def promiseGet (req : PromiseGetReq) (now : Nat) : H PromiseGetRes := do
   | some o =>
       return { status := 200, promise := some (o.promise.toRecord o.id) }
 
+/-- Every child exists and may be awaited.
+
+    The same two questions `promise.callback` asks of one awaited
+    promise — 404 for absent, 422 for internal — asked of a list, and
+    answered as one bit because a combinator either gets all of its
+    children or none. An internal promise is refused for the reason it
+    is refused everywhere: nobody outside its own call graph may wait on
+    it, and a combinator is somebody else.
+
+    That the children must ALREADY EXIST is what makes the awaits-graph
+    acyclic by construction. A combinator names promises created before
+    it, and never itself, so no cycle can be built out of combinators —
+    which is why nothing downstream has to detect one. -/
+def childrenAwaitable (now : Nat) : List Ident → H Bool
+  | []      => return true
+  | c :: cs => do
+      match ← readObject c now with
+      | none   => return false
+      | some o => if o.promise.otype.awaitable then childrenAwaitable now cs else return false
+
 def promiseCreate (req : PromiseCreateReq) (now : Nat) : H PromiseCreateRes := do
   if req.tags.timerTargeted then
+    return { status := 400, promise := none }
+  if !ServerModel.combinatorWellFormed req.id req.param req.tags then
     return { status := 400, promise := none }
   match ← readObject req.id now with
   | some o =>
       return { status := 200, promise := some (o.promise.toRecord o.id) }
   | none =>
+      if !(← childrenAwaitable now (ServerModel.combinatorChildren req.tags req.param)) then
+        return { status := 422, promise := none }
       let o ← createPromise req now
       return { status := 200, promise := some (o.promise.toRecord o.id) }
 
+/-- A client verdict.
+
+    422 on a combinator, unconditionally — before the absorb, so that
+    settling one that is already settled is refused too. A combinator is
+    the promise whose verdict is the SERVER's, computed by its rule from
+    the promises it names; a client that could name a different answer
+    would make `otype` a suggestion rather than a fact, and would make
+    `consistent_combinator_settlement_matches_rule` false of this
+    machine. The door is where that is prevented. -/
 def promiseSettle (req : PromiseSettleReq) (now : Nat) : H PromiseSettleRes := do
   if !req.state.settable then
     return { status := 400 }
@@ -49,6 +82,8 @@ def promiseSettle (req : PromiseSettleReq) (now : Nat) : H PromiseSettleRes := d
   | none =>
       return { status := 404 }
   | some o =>
+      if o.promise.otype == .combinator then
+        return { status := 422 }
       if o.promise.state == .pending then
         let p := { o.promise with state := req.state, value := req.value,
                                   settledAt := some now }
@@ -124,7 +159,8 @@ def taskGet (req : TaskGetReq) (now : Nat) : H TaskGetRes := do
 
 def taskCreate (req : TaskCreateReq) (now : Nat) : H TaskCreateRes := do
   let a := req.action
-  if a.tags.otype != .runnable ∨ a.tags.timerTargeted then
+  if a.tags.otype != .runnable ∨ a.tags.timerTargeted
+      ∨ !ServerModel.combinatorWellFormed a.id a.param a.tags then
     return { status := 400 }
   match ← readObject a.id now with
   | none =>
@@ -394,8 +430,21 @@ def scheduleGet (req : ScheduleGetReq) (_now : Nat) : H ScheduleGetRes := do
   | some s =>
       return { status := 200, schedule := some s }
 
+/-- A schedule may not carry a combinator.
+
+    Not because the rule would misbehave, but because a schedule's
+    promise id is EXPANDED per occurrence and its param is not: every
+    firing would name the same children, so the second occurrence would
+    be a combinator over promises the first one already consumed. A
+    combinator's children belong to one instance of a call graph, and a
+    schedule has no instance to belong to.
+
+    It is also the check that keeps `createIfAbsent` honest. That path
+    creates a promise with no status code to return, so it has no way to
+    report the 422 a missing child earns at `promise.create`; refusing
+    the schedule is how the case is kept from arising. -/
 def scheduleCreate (req : ScheduleCreateReq) (now : Nat) : H ScheduleCreateRes := do
-  if req.promiseTags.timerTargeted then
+  if req.promiseTags.timerTargeted ∨ req.promiseTags.isCombinator then
     return { status := 400 }
   match ← getSchedule req.id with
   | some s =>

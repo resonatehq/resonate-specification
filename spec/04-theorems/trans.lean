@@ -62,7 +62,7 @@ it belongs to is named by the effect that writes it. -/
 
 /-! ## The relational obligation set
 
-Six transformation fields, reflexivity, and two birth fields.
+Six transformation fields, reflexivity, and three birth fields.
 
 The births are the interesting part. A relational obligation has
 nothing to relate a newborn to, so it judges it alone — that is `Rf`.
@@ -100,6 +100,12 @@ structure HRel (R : PromiseObject → PromiseObject → Bool)
                    Rf { state := st, param := param, tags := tags,
                         timeoutAt := timeoutAt, createdAt := timeoutAt,
                         settledAt := some timeoutAt } = true
+  freshDecided : ∀ (param : ServerModel.Value) (tags : ServerModel.Tags)
+                   (timeoutAt createdAt : Nat) (st : ServerModel.PromiseState)
+                   (v : ServerModel.Value), createdAt < timeoutAt → st.settable = true →
+                   Rf { state := st, param := param, value := v, tags := tags,
+                        timeoutAt := timeoutAt, createdAt := createdAt,
+                        settledAt := some createdAt } = true
 
 theorem promise?_none_of_find?_none {a : ServerState} {id : ServerModel.Ident}
     (h : a.objects.find? (·.id == id) = none) : a.promise? id = none := by
@@ -177,6 +183,9 @@ theorem hereditary_rel {R : PromiseObject → PromiseObject → Bool}
   dead id st param tags tAt hst hfresh := by
     simp [relQ, relPred, promise?_none_of_find?_none hfresh,
           h.freshDead st param tags tAt hst]
+  decided id param tags tAt cAt st v hlt hset hfresh := by
+    simp [relQ, relPred, promise?_none_of_find?_none hfresh,
+          h.freshDecided param tags tAt cAt st v hlt hset]
   tFulfill _ _ := rfl
   tBornPending _ := rfl
   tBornDone := rfl
@@ -300,6 +309,7 @@ theorem hrel_birthFields : HRel rBirthFields (fun _ => true) where
   dropCallback p₀ p c _ h := by simpa [rBirthFields] using h
   freshLive _ _ _ _ _ := rfl
   freshDead _ _ _ _ _ := rfl
+  freshDecided _ _ _ _ _ _ _ _ := rfl
 
 theorem preserved_promise_birth_fields_immutable_step (mat : Bool) (st : Step) (now n' : Nat)
     (s : ServerState) (hnd : (s.objects.map (·.id)).Nodup) :
@@ -359,6 +369,7 @@ theorem hrel_settledRecord : HRel rSettledRecord (fun _ => true) where
   dropCallback p₀ p c _ h := by simpa [rSettledRecord] using h
   freshLive _ _ _ _ _ := rfl
   freshDead _ _ _ _ _ := rfl
+  freshDecided _ _ _ _ _ _ _ _ := rfl
 
 theorem preserved_settled_promise_record_step (mat : Bool) (st : Step) (now n' : Nat)
     (s : ServerState) (hnd : (s.objects.map (·.id)).Nodup) :
@@ -421,6 +432,7 @@ theorem hrel_valueUntilSettled : HRel rValueUntilSettled (fun _ => true) where
   dropCallback p₀ p c _ h := by simpa [rValueUntilSettled] using h
   freshLive _ _ _ _ _ := rfl
   freshDead _ _ _ _ _ := rfl
+  freshDecided _ _ _ _ _ _ _ _ := rfl
 
 theorem preserved_promise_value_until_settlement_step (mat : Bool) (st : Step)
     (now n' : Nat) (s : ServerState) (hnd : (s.objects.map (·.id)).Nodup) :
@@ -478,6 +490,7 @@ theorem hrel_oneWay : HRel rOneWay (fun _ => true) where
   dropCallback p₀ p c _ h := by simpa [rOneWay] using h
   freshLive _ _ _ _ _ := rfl
   freshDead _ _ _ _ _ := rfl
+  freshDecided _ _ _ _ _ _ _ _ := rfl
 
 theorem preserved_promise_settlement_is_one_way_step (mat : Bool) (st : Step) (now n' : Nat)
     (s : ServerState) (hnd : StoreNodup s) :
@@ -546,6 +559,8 @@ theorem hrel_callbacksGrow :
   dropCallback p₀ p c hns _ := by simp [rCallbacksGrow, hns]
   freshLive _ _ _ _ _ := rfl
   freshDead st param tags tAt hst := by subst hst; split <;> simp
+  freshDecided param tags tAt cAt st v hlt hset := by
+    cases st <;> simp_all [ServerModel.PromiseState.settable]
 
 theorem monotone_promise_callbacks_grow_while_pending_step (mat : Bool) (st : Step)
     (now n' : Nat) (s : ServerState) (hnd : StoreNodup s) :
@@ -588,6 +603,8 @@ theorem hrel_listenersGrow :
   dropCallback p₀ p c _ h := by simpa [rListenersGrow] using h
   freshLive _ _ _ _ _ := rfl
   freshDead st param tags tAt hst := by subst hst; split <;> simp
+  freshDecided param tags tAt cAt st v hlt hset := by
+    cases st <;> simp_all [ServerModel.PromiseState.settable]
 
 theorem monotone_promise_listeners_grow_while_pending_step (mat : Bool) (st : Step)
     (now n' : Nat) (s : ServerState) (hnd : StoreNodup s) :

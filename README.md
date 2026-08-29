@@ -22,7 +22,7 @@ not another implementation. This repository is that answer, in three parts:
 
 - **the machine** says what the server does — one step per request, plus the
   steps it takes on its own initiative;
-- **the catalogue** says what must be true of it — 92 properties, each a
+- **the catalogue** says what must be true of it — 97 properties, each a
   decidable predicate on a state or on a pair of consecutive states;
 - **the checker** takes a trace recorded from a real server and asks whether
   the machine can account for it.
@@ -35,7 +35,7 @@ report rather than a difference of opinion.
 
 | | |
 |---|---|
-| [`spec/01-protocol`](spec/01-protocol) | the wire surface — records, requests, responses, validation |
+| [`spec/01-protocol`](spec/01-protocol) | the wire surface — records, requests, responses, validation, combinators |
 | [`spec/02-abstract`](spec/02-abstract) | the machine: state, effects, handlers, the system definition, and the property catalogue |
 | [`spec/04-theorems`](spec/04-theorems) | what is proved about it, and the harnesses that evaluate it |
 | [`tlap/`](tlap) | the TLA+ machine — the same alphabet with atomicity removed, and the catalogue checked against it |
@@ -44,14 +44,16 @@ report rather than a difference of opinion.
 
 Every Lean file opens with a header saying what that piece is for and why
 it is shaped the way it is; `valid/` and the two `work/` generators carry
-their own READMEs.
+their own READMEs. [`docs/combinators.md`](docs/combinators.md) is the
+one exception: a design record for work in progress, holding the
+alternatives that were rejected and the questions still open.
 
 ## Status
 
 Every entry of the catalogue holds over 1 464 enumerated scripts, under
-both read disciplines, checked by kernel `decide` at build time. Of the 92
+both read disciplines, checked by kernel `decide` at build time. Of the 97
 entries, 31 are proved outright — true at every instant of every run, no
-bound and no sample. The remaining 61, and the theorem that collects them
+bound and no sample. The remaining 66, and the theorem that collects them
 (`valid_implies_legal`), are stated and open.
 
 ## Build

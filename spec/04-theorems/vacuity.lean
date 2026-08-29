@@ -12,10 +12,10 @@ being exact about which is which.
 
 ## The conclusion is not trivially true
 
-`Legal`'s body is a fold over the 95-entry catalogue. If that fold were
+`Legal`'s body is a fold over the 97-entry catalogue. If that fold were
 constantly `true` the theorem would say nothing. `legal_body_is_falsifiable`
 exhibits a state the fold REFUSES, by `decide`. (The stronger version
-lives in `properties-check.lean`: 47 hand-built mutants, each one
+lives in `properties-check.lean`: 50 hand-built mutants, each one
 required to fail.)
 
 ## The hypothesis is satisfiable — and that part is a construction

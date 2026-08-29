@@ -1,4 +1,4 @@
-import «01-protocol».«validation»
+import «01-protocol».«combinators»
 
 /-!  # The abstract machine — state, and the shape of a transition
 
@@ -101,6 +101,12 @@ def PromiseObject.isTimer (p : PromiseObject) : Bool := p.tags.isTimer
     to. Naming the axis makes the wrong reading a type error rather
     than a plausible line of code. -/
 def PromiseObject.otype (p : PromiseObject) : OType := p.tags.otype
+
+/-- The promises a combinator watches, as the store holds it. Empty for
+    everything else: the param of an ordinary promise is opaque and
+    `combinatorChildren` is what refuses to look inside it. -/
+def PromiseObject.children (p : PromiseObject) : List Ident :=
+  ServerModel.combinatorChildren p.tags p.param
 
 
 def PromiseObject.addCallback (p : PromiseObject) (awaiterId : Ident) : PromiseObject :=
@@ -298,37 +304,6 @@ def setSettled (o : Object) (p : PromiseObject) : H Unit := do
     | some t => if t.state != .fulfilled then setTask o.id t.fulfill
     | none   => pure ()
 
-def createPromise (req : PromiseCreateReq) (now : Nat) : H Object := do
-  if req.timeoutAt > now then
-    let p : PromiseObject :=
-      { state := .pending, param := req.param, tags := req.tags,
-        timeoutAt := req.timeoutAt, createdAt := now }
-    setPromise req.id p
-    if p.otype == .runnable then
-      let due :=
-        match p.tags.get? "resonate:delay" with
-        | some d => max (ServerModel.parseNat d) now
-        | none => now
-      let t : TaskObject := { state := .pending, version := 0, retryTimeoutAt := some due }
-      setTask req.id t
-      return { id := req.id, promise := p, task := some t }
-    else
-      return { id := req.id, promise := p }
-  else
-    let state :=
-      if req.tags.isTimer then PromiseState.resolved else PromiseState.rejectedTimedout
-    let p : PromiseObject :=
-      { state := state, param := req.param, tags := req.tags,
-        timeoutAt := req.timeoutAt, createdAt := req.timeoutAt,
-        settledAt := some req.timeoutAt }
-    setPromise req.id p
-    if p.otype == .runnable then
-      let t : TaskObject := { state := .fulfilled, version := 0 }
-      setTask req.id t
-      return { id := req.id, promise := p, task := some t }
-    else
-      return { id := req.id, promise := p }
-
 /-- Persist whichever face the projection moved. Split out of
     `readObject` rather than inlined so that the read stays a single
     statement behind the `mat` test — and so the induction tier has a
@@ -370,6 +345,133 @@ def readTaskObject (id : Ident) (now : Nat) : H (Option Object) := do
   | none   => return none
   | some o => if o.task.isSome then readObject id now else return none
 
+/-- The read the RESUME step makes. A row can take a resume when it has
+    a task to wake, or when it is a combinator with a verdict to
+    re-decide; anything else declines before the read, exactly as
+    `readTaskObject` does — the resume was never about that row.
+
+    The disjunction is the whole of what combinators cost the resume
+    path. Before them a resume meant "wake a worker", and the read that
+    fronted it could say so by asking for a task. -/
+def readResumeObject (id : Ident) (now : Nat) : H (Option Object) := do
+  match ← getObject id with
+  | none   => return none
+  | some o =>
+      if o.task.isSome ∨ o.promise.otype == .combinator then
+        readObject id now
+      else
+        return none
+
+/-! ## Combinators
+
+Three pieces the creating and resuming paths share: which children have
+settled, arming the ones that have not, and the verdict a combinator is
+born with. The RULES themselves are not here — they are
+`Combinator.verdict` in `01-protocol/combinators.lean`, and nothing
+below names one. -/
+
+/-- The children that have already settled, in param order.
+
+    Reads through `readObject`, so the caller's discipline decides
+    whether a child found past its deadline is settled in the store as
+    well as in the answer. Param order is what the rules tie-break on,
+    so this preserves it.
+
+    A child no object holds is not settled — it cannot be. The creating
+    door refuses a combinator that names one, so the arm is defensive
+    rather than reachable. -/
+def settledChildren (now : Nat) : List Ident → H (List Ident)
+  | []      => return []
+  | c :: cs => do
+      match ← readObject c now with
+      | some o =>
+          if o.promise.state != .pending then
+            return c :: (← settledChildren now cs)
+          else
+            settledChildren now cs
+      | none => settledChildren now cs
+
+/-- Arm every child that has NOT settled, with the combinator as the
+    awaiter. The drain wakes it when they settle, and `resumeOne` is
+    where the verdict is re-asked.
+
+    A settled child is deliberately not armed, and that is not an
+    optimisation: obligations on a settled promise only drain
+    (`monotone_promise_callbacks_shrink_once_settled`), so a callback
+    added to one would be a row the catalogue rejects. What a settled
+    child contributes instead is a verdict at birth. -/
+def awaitChildren (parent : Ident) (now : Nat) : List Ident → H Unit
+  | []      => pure ()
+  | c :: cs => do
+      match ← readObject c now with
+      | some o =>
+          if o.promise.state == .pending then
+            setPromise o.id (o.promise.addCallback parent)
+          else
+            pure ()
+      | none => pure ()
+      awaitChildren parent now cs
+
+/-- The verdict a combinator is born with, if it has one.
+
+    Nothing orders a client's creates: a race may be created after the
+    promises it races have finished. Those children cannot be armed, so
+    the combinator decides over the ones already settled at the instant
+    it is born — by the SAME rule the resume path applies, which is why
+    `race` over a finished child resolves immediately and `all` over no
+    children at all resolves immediately too.
+
+    `none` for everything that is not a combinator: `children` is empty
+    and `tags.combinator` is `none`, so no rule is even asked. -/
+def combinatorBirth (p : PromiseObject) (now : Nat) : H ServerModel.Verdict := do
+  match p.tags.combinator with
+  | none   => return none
+  | some c => return c.verdict p.children (← settledChildren now p.children)
+
+/-- Birth. Three shapes, not two: pending, born dead at a deadline
+    already past, and — new with combinators — born DECIDED, when the
+    promises a combinator names had settled before it existed. The third
+    is `consistent_new_promise_born_clean`'s third disjunct, and the
+    only birth that carries a value. -/
+def createPromise (req : PromiseCreateReq) (now : Nat) : H Object := do
+  if req.timeoutAt > now then
+    let p : PromiseObject :=
+      { state := .pending, param := req.param, tags := req.tags,
+        timeoutAt := req.timeoutAt, createdAt := now }
+    if p.otype == .runnable then
+      setPromise req.id p
+      let due :=
+        match p.tags.get? "resonate:delay" with
+        | some d => max (ServerModel.parseNat d) now
+        | none => now
+      let t : TaskObject := { state := .pending, version := 0, retryTimeoutAt := some due }
+      setTask req.id t
+      return { id := req.id, promise := p, task := some t }
+    else
+      match ← combinatorBirth p now with
+      | some (st, v) =>
+          let q := { p with state := st, value := v, settledAt := some now }
+          setPromise req.id q
+          return { id := req.id, promise := q }
+      | none =>
+          setPromise req.id p
+          awaitChildren req.id now p.children
+          return { id := req.id, promise := p }
+  else
+    let state :=
+      if req.tags.isTimer then PromiseState.resolved else PromiseState.rejectedTimedout
+    let p : PromiseObject :=
+      { state := state, param := req.param, tags := req.tags,
+        timeoutAt := req.timeoutAt, createdAt := req.timeoutAt,
+        settledAt := some req.timeoutAt }
+    setPromise req.id p
+    if p.otype == .runnable then
+      let t : TaskObject := { state := .fulfilled, version := 0 }
+      setTask req.id t
+      return { id := req.id, promise := p, task := some t }
+    else
+      return { id := req.id, promise := p }
+
 def createIfAbsent (req : PromiseCreateReq) (now : Nat) : H Unit := do
   match ← readObject req.id now with
   | some _ => pure ()
@@ -385,6 +487,9 @@ def viewObject (id : Ident) (now : Nat) : H (Option Object) :=
 
 def touchTaskObject (id : Ident) (now : Nat) : H (Option Object) :=
   withMat true (readTaskObject id now)
+
+def touchResumeObject (id : Ident) (now : Nat) : H (Option Object) :=
+  withMat true (readResumeObject id now)
 
 def viewTaskObject (id : Ident) (now : Nat) : H (Option Object) :=
   withMat false (readTaskObject id now)

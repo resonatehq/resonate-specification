@@ -119,8 +119,85 @@ def covHalt : List (Step × Nat) :=
     (.external (.taskHalt { id := oid "h" }), 110),
     (.external (.taskContinue { id := oid "h" }), 120) ]
 
+/-! ### Combinators
+
+Four scripts, because a combinator has four paths and the alphabet
+reaches none of them.
+
+`covRace` is the ordinary one: two children, one settles, the drain
+delivers the resume, the rule answers, the race resolves naming the
+winner — and the second child's later settlement finds a promise that
+is no longer pending and is absorbed.
+
+`covRaceBorn` is the race created LATE, after a child has already
+finished. There is no callback to arm on a settled child, so the
+verdict is taken at birth and the promise is born resolved. It is the
+script that reaches
+`consistent_new_promise_born_clean`'s third shape.
+
+`covAll` is the rule that must wait: the first drain asks and gets
+`none`, the second gets a verdict. Two resumes, one settlement, and the
+`none` arm of `Combinator.verdict` exercised on the way.
+
+`covCombinatorAwaited` is the end-to-end shape combinators exist for: a
+task suspends on a combinator, the combinator's children settle, the
+combinator settles, and the drain then wakes the TASK from the
+combinator — an awaits-edge whose awaiter is a combinator on one hop and
+a task on the next. It is also what checks that a combinator is
+awaitable, since `task.suspend` refuses an awaited promise that is
+not. -/
+
+def covRace : List (Step × Nat) :=
+  [ (.external (.promiseCreate { id := oid "c1", timeoutAt := 9000, param := {}, tags := extTags }), 100),
+    (.external (.promiseCreate { id := oid "c2", timeoutAt := 9000, param := {}, tags := extTags }), 110),
+    (.external (.promiseCreate { id := oid "r", timeoutAt := 9000,
+                                 param := childrenParam [oid "c1", oid "c2"], tags := raceTags }), 120),
+    (.external (.promiseSettle { id := oid "c2", state := .resolved, value := {} }), 200),
+    (.internal (.callback { awaited := oid "c2", awaiter := oid "r" }), 210),
+    (.external (.promiseGet { id := oid "r" }), 220),
+    (.external (.promiseSettle { id := oid "c1", state := .rejected, value := {} }), 230),
+    (.internal (.callback { awaited := oid "c1", awaiter := oid "r" }), 240),
+    (.external (.promiseGet { id := oid "r" }), 250) ]
+
+def covRaceBorn : List (Step × Nat) :=
+  [ (.external (.promiseCreate { id := oid "d1", timeoutAt := 9000, param := {}, tags := extTags }), 100),
+    (.external (.promiseCreate { id := oid "d2", timeoutAt := 9000, param := {}, tags := extTags }), 110),
+    (.external (.promiseSettle { id := oid "d1", state := .resolved, value := {} }), 120),
+    (.external (.promiseCreate { id := oid "rb", timeoutAt := 9000,
+                                 param := childrenParam [oid "d1", oid "d2"], tags := raceTags }), 130),
+    (.external (.promiseGet { id := oid "rb" }), 140),
+    (.external (.promiseSettle { id := oid "rb", state := .rejected, value := {} }), 150) ]
+
+def covAll : List (Step × Nat) :=
+  [ (.external (.promiseCreate { id := oid "a1", timeoutAt := 9000, param := {}, tags := extTags }), 100),
+    (.external (.promiseCreate { id := oid "a2", timeoutAt := 9000, param := {}, tags := extTags }), 110),
+    (.external (.promiseCreate { id := oid "al", timeoutAt := 9000,
+                                 param := childrenParam [oid "a1", oid "a2"], tags := allTags }), 120),
+    (.external (.promiseSettle { id := oid "a1", state := .resolved, value := {} }), 200),
+    (.internal (.callback { awaited := oid "a1", awaiter := oid "al" }), 210),
+    (.external (.promiseGet { id := oid "al" }), 220),
+    (.external (.promiseSettle { id := oid "a2", state := .rejected, value := {} }), 300),
+    (.internal (.callback { awaited := oid "a2", awaiter := oid "al" }), 310),
+    (.external (.promiseGet { id := oid "al" }), 320) ]
+
+def covCombinatorAwaited : List (Step × Nat) :=
+  [ (.external (.promiseCreate { id := oid "e1", timeoutAt := 9000, param := {}, tags := extTags }), 100),
+    (.external (.promiseCreate { id := oid "e2", timeoutAt := 9000, param := {}, tags := extTags }), 110),
+    (.external (.promiseCreate { id := oid "ec", timeoutAt := 9000,
+                                 param := childrenParam [oid "e1", oid "e2"], tags := raceTags }), 120),
+    (.external (.taskCreate { pid := "p0", ttl := 1000,
+                              action := { id := oid "x", timeoutAt := 9000, param := {}, tags := tgtTags } }), 130),
+    (.external (.taskSuspend { id := oid "x", version := 1,
+                               actions := [{ awaited := oid "ec", awaiter := oid "x" }] }), 140),
+    (.external (.promiseSettle { id := oid "e1", state := .resolved, value := {} }), 200),
+    (.internal (.callback { awaited := oid "e1", awaiter := oid "ec" }), 210),
+    (.internal (.callback { awaited := oid "ec", awaiter := oid "x" }), 220),
+    (.external (.taskGet { id := oid "x" }), 230),
+    (.internal (.taskRetryTimeout { id := oid "x" }), 240) ]
+
 def battery : List (List (Step × Nat)) :=
-  [wLag, b1, b2, b3, b4, b5, b6, covInternal, covListeners, covTwoTasks, covHalt]
+  [wLag, b1, b2, b3, b4, b5, b6, covInternal, covListeners, covTwoTasks, covHalt,
+   covRace, covRaceBorn, covAll, covCombinatorAwaited]
 
 set_option maxRecDepth 100000
 set_option maxHeartbeats 4000000
@@ -220,6 +297,9 @@ def mutants : List (String × Bool) :=
        well_formed_task_resumes_unique 0 (oneTask { T with resumes := [oid "b", oid "b"] })),
     ("well_formed_schedule_promise_tags_not_timer_targeted",
        well_formed_schedule_promise_tags_not_timer_targeted 0 (oneSchedule { C with promiseTags := [("resonate:timer","true"), ("resonate:target","w")] })),
+    ("well_formed_schedule_promise_tags_not_combinator",
+       well_formed_schedule_promise_tags_not_combinator 0
+         (oneSchedule { C with promiseTags := [("resonate:combinator","race")] })),
     ("well_formed_schedule_created_at_lte_next_run_at",
        well_formed_schedule_created_at_lte_next_run_at 0 (oneSchedule { C with nextRunAt := 1 })),
     ("well_formed_schedule_created_at_lte_last_run_at",
@@ -246,8 +326,28 @@ def mutants : List (String × Bool) :=
     ("consistent_settled_promise_has_fulfilled_task",
        consistent_settled_promise_has_fulfilled_task 0
          (obj { P with state := .resolved, settledAt := some 20 } (some T))),
-    ("consistent_callback_awaiter_is_targeted",
-       consistent_callback_awaiter_is_targeted 0 (obj { P with callbacks := [oid "z"] } none)),
+    ("consistent_callback_awaiter_is_resumable",
+       consistent_callback_awaiter_is_resumable 0 (obj { P with callbacks := [oid "z"] } none)),
+    -- Four ways a combinator row can be malformed, one per refusal in
+    -- `combinatorWellFormed`. The door is one function, so these are
+    -- the sub-names of one entry rather than four entries.
+    ("well_formed_promise_combinator_is_well_formed/unknown_rule",
+       well_formed_promise_combinator_is_well_formed 0
+         (onePromise { P with tags := [("resonate:combinator","quorum")] })),
+    ("well_formed_promise_combinator_is_well_formed/targeted",
+       well_formed_promise_combinator_is_well_formed 0
+         (onePromise { P with tags := [("resonate:combinator","race"), ("resonate:target","w")] })),
+    -- `"o:"` renders back as `"o"`, so the param does not round-trip
+    -- through the id-list encoding and is not a child list.
+    ("well_formed_promise_combinator_is_well_formed/param_not_an_id_list",
+       well_formed_promise_combinator_is_well_formed 0
+         (onePromise { P with tags := raceTags, param := { data := some "o:" } })),
+    ("well_formed_promise_combinator_is_well_formed/races_itself",
+       well_formed_promise_combinator_is_well_formed 0
+         (onePromise { P with tags := raceTags, param := childrenParam [oid "a"] })),
+    ("consistent_combinator_children_exist",
+       consistent_combinator_children_exist 0
+         (onePromise { P with tags := raceTags, param := childrenParam [oid "ghost"] })),
     ("consistent_outbox_execute_names_existing_task",
        consistent_outbox_execute_names_existing_task 0 { outbox := [{ address := "w", message := .execute (oid "ghost") 0 }] }),
     ("consistent_outbox_never_ahead",
@@ -355,6 +455,103 @@ theorem reaches_outbox_execute :
 theorem reaches_outbox_unblock :
     witnesses battery (fun s => s.outbox.any (fun e =>
       match e.message with | .unblock _ => true | .execute _ _ => false)) = true := by decide
+
+/-! ### Combinators, pinned
+
+A green battery says the catalogue was not violated. It does not say the
+rules did what they were written to do: a machine that answered 400 to
+every combinator create would be green too, and so would one whose race
+resolved with an empty value. These pin the answers, so that a change to
+a rule has to come here and say so. -/
+
+def finalOf (w : List (Step × Nat)) : AbstractModel.ServerState :=
+  (runFin true w AbstractModel.ServerState.init).2
+
+def stateOf (w : List (Step × Nat)) (id : ServerModel.Ident) :
+    Option ServerModel.PromiseState :=
+  ((finalOf w).promise? id).map (·.state)
+
+def valueOf (w : List (Step × Nat)) (id : ServerModel.Ident) : Option String :=
+  ((finalOf w).promise? id).bind (·.value.data)
+
+def taskStateOf (w : List (Step × Nat)) (id : ServerModel.Ident) :
+    Option ServerModel.TaskState :=
+  ((finalOf w).task? id).map (·.state)
+
+def statusesOf (w : List (Step × Nat)) : List Nat :=
+  (runFin true w AbstractModel.ServerState.init).1.map fun
+    | .promiseGet r    => r.status
+    | .promiseCreate r => r.status
+    | .promiseSettle r => r.status
+    | .taskGet r       => r.status
+    | .taskCreate r    => r.status
+    | .taskSuspend r   => r.status
+    | _                => 0
+
+/-- The race resolves, and its value NAMES the winner. -/
+theorem race_resolves_naming_the_winner :
+    stateOf covRace (oid "r") = some .resolved
+      ∧ valueOf covRace (oid "r") = some "o:c2" := by decide
+
+/-- And the loser settling later does not move it. `c1` is rejected at
+    230 and its drain fires at 240; the race is already settled, so the
+    resume is absorbed and the winner still reads `c2`. A rule re-asked
+    after the fact cannot change an answer already given. -/
+theorem race_ignores_the_loser :
+    stateOf (List.take 6 covRace) (oid "r") = stateOf covRace (oid "r")
+      ∧ valueOf (List.take 6 covRace) (oid "r") = valueOf covRace (oid "r") := by decide
+
+/-- Created after a child had finished, the race is born decided —
+    resolved at its own `createdAt`, naming the child that was already
+    settled. There was no callback to arm on `d1`, so this is the only
+    way the answer could have been reached. -/
+theorem race_born_decided :
+    stateOf (List.take 4 covRaceBorn) (oid "rb") = some .resolved
+      ∧ valueOf (List.take 4 covRaceBorn) (oid "rb") = some "o:d1" := by decide
+
+/-- `all` waits. After the first child settles and its drain fires the
+    combinator is still pending; only the second drain settles it, and
+    the value names every child. -/
+theorem all_waits_for_every_child :
+    stateOf (List.take 6 covAll) (oid "al") = some .pending
+      ∧ stateOf covAll (oid "al") = some .resolved
+      ∧ valueOf covAll (oid "al") = some "o:a1,o:a2" := by decide
+
+/-- A client may not settle a combinator. The last step of `covRaceBorn`
+    is a `promise.settle` against the race, and it answers 422. -/
+theorem combinator_settle_is_refused :
+    (statusesOf covRaceBorn).getLast? = some 422 := by decide
+
+/-- A combinator is awaitable, and the chain runs end to end: `x`
+    suspends on the race (`task.suspend` answers 200, which it would not
+    if the race were unawaitable), a child settles, the race settles,
+    and the second drain wakes the task. -/
+theorem combinator_is_awaitable :
+    (statusesOf covCombinatorAwaited)[4]? = some 200 := by decide
+
+theorem combinator_wakes_its_awaiter :
+    stateOf covCombinatorAwaited (oid "ec") = some .resolved
+      ∧ taskStateOf covCombinatorAwaited (oid "x") = some .pending := by decide
+
+/-! ### Reach, for the combinator entries -/
+
+theorem reaches_combinator_promise :
+    witnesses battery (fun s => s.promises.any (fun p => p.otype == .combinator)) = true := by
+  decide
+
+theorem reaches_settled_combinator :
+    witnesses battery (fun s => s.promises.any (fun p =>
+      p.otype == .combinator && p.state != .pending)) = true := by decide
+
+/-- The guard of `consistent_callback_awaiter_is_resumable`'s second
+    arm: an awaits-edge whose awaiter is a combinator rather than a
+    task. Without this the widened entry would be checked only on the
+    half it always had. -/
+theorem reaches_combinator_awaiter :
+    witnesses battery (fun s => s.objects.any (fun o =>
+      o.promise.callbacks.any (fun a =>
+        s.objects.any (fun q => q.id == a && q.promise.otype == .combinator)))) = true := by
+  decide
 
 /-- The four `well_formed_schedule_*` entries are exercised by NOTHING:
     no script can create a schedule that runs, because `nextCron` and

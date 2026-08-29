@@ -134,6 +134,13 @@ structure HPromise (f : PromiseObject → Bool) : Prop where
                    f { state := st, param := param, tags := tags,
                        timeoutAt := timeoutAt, createdAt := timeoutAt,
                        settledAt := some timeoutAt } = true
+  decided      : ∀ (id : ServerModel.Ident) (param : ServerModel.Value) (tags : ServerModel.Tags)
+                   (timeoutAt createdAt : Nat) (st : ServerModel.PromiseState)
+                   (v : ServerModel.Value),
+                   createdAt < timeoutAt → st.settable = true →
+                   f { state := st, param := param, value := v, tags := tags,
+                       timeoutAt := timeoutAt, createdAt := createdAt,
+                       settledAt := some createdAt } = true
 
 theorem hereditary_onlyPromise {f : PromiseObject → Bool} (h : HPromise f)
     (a : ServerState) : Hereditary (onlyPromise f) a where
@@ -145,6 +152,8 @@ theorem hereditary_onlyPromise {f : PromiseObject → Bool} (h : HPromise f)
   dropCallback _ p c _ _ := h.dropCallback p c
   live := fun id param tags tAt cAt hlt _ => h.live id param tags tAt cAt hlt
   dead := fun id st param tags tAt hst _ => h.dead id st param tags tAt hst
+  decided := fun id param tags tAt cAt st v hlt hset _ =>
+    h.decided id param tags tAt cAt st v hlt hset
   tFulfill _ _ := rfl
   tBornPending _ := rfl
   tBornDone := rfl
@@ -210,6 +219,7 @@ theorem hereditary_onlyTask {f : TaskObject → Bool} (h : HTask f)
   dropCallback _ _ _ _ _ _ := rfl
   live _ _ _ _ _ _ _ := rfl
   dead _ _ _ _ _ _ _ := rfl
+  decided _ _ _ _ _ _ _ _ _ _ := rfl
   tFulfill := h.fulfill
   tBornPending := h.bornPending
   tBornDone := h.bornDone
@@ -258,6 +268,7 @@ theorem hereditary_onlySchedule {f : ServerModel.Schedule → Bool} (h : HSchedu
   dropCallback _ _ _ _ _ _ := rfl
   live _ _ _ _ _ _ _ := rfl
   dead _ _ _ _ _ _ _ := rfl
+  decided _ _ _ _ _ _ _ _ _ _ := rfl
   tFulfill _ _ := rfl
   tBornPending _ := rfl
   tBornDone := rfl
@@ -310,6 +321,9 @@ theorem hp_createdLeTimeout : HPromise qCreatedLeTimeout where
   dropCallback p a h := by simpa [qCreatedLeTimeout] using h
   live id param tags timeoutAt createdAt h := by simp [qCreatedLeTimeout]; omega
   dead id st param tags timeoutAt _ := by simp [qCreatedLeTimeout]
+  decided id param tags timeoutAt createdAt st v hlt hset := by
+    cases st <;>
+      simp_all [qCreatedLeTimeout, ServerModel.PromiseState.settable] <;> omega
 
 /-! ## A pending promise is born before its deadline
 
@@ -338,6 +352,9 @@ theorem hp_pendingBeforeDeadline : HPromise qPendingBeforeDeadline where
   dropCallback p a h := by simpa [qPendingBeforeDeadline] using h
   live id param tags timeoutAt createdAt h := by simp [qPendingBeforeDeadline]; omega
   dead id st param tags timeoutAt hst := by subst hst; split <;> simp [qPendingBeforeDeadline]
+  decided id param tags timeoutAt createdAt st v hlt hset := by
+    cases st <;>
+      simp_all [qPendingBeforeDeadline, ServerModel.PromiseState.settable] <;> omega
 
 /-! ## Settled exactly when stamped
 
@@ -366,6 +383,9 @@ theorem hp_settledIffStamped : HPromise qSettledIffStamped where
   dropCallback p a h := by simpa [qSettledIffStamped] using h
   live id param tags timeoutAt createdAt h := by simp [qSettledIffStamped]
   dead id st param tags timeoutAt hst := by subst hst; split <;> simp [qSettledIffStamped]
+  decided id param tags timeoutAt createdAt st v hlt hset := by
+    cases st <;>
+      simp_all [qSettledIffStamped, ServerModel.PromiseState.settable] <;> omega
 
 /-! ## `rejectedTimedout` is server-owned
 
@@ -397,6 +417,9 @@ theorem hp_timedoutIsServerOwned : HPromise qTimedoutIsServerOwned where
   dropCallback p a h := by simpa [qTimedoutIsServerOwned] using h
   live id param tags timeoutAt createdAt h := by simp [qTimedoutIsServerOwned]
   dead id st param tags timeoutAt hst := by subst hst; split <;> simp [qTimedoutIsServerOwned]
+  decided id param tags timeoutAt createdAt st v hlt hset := by
+    cases st <;>
+      simp_all [qTimedoutIsServerOwned, ServerModel.PromiseState.settable] <;> omega
 
 /-! ## The settlement stamp is never past the deadline
 
@@ -427,6 +450,9 @@ theorem hp_settledAtLeTimeout : HPromise qSettledAtLeTimeout where
   dropCallback p a h := by simpa [qSettledAtLeTimeout] using h
   live id param tags timeoutAt createdAt h := by simp [qSettledAtLeTimeout]
   dead id st param tags timeoutAt hst := by subst hst; split <;> simp [qSettledAtLeTimeout]
+  decided id param tags timeoutAt createdAt st v hlt hset := by
+    cases st <;>
+      simp_all [qSettledAtLeTimeout, ServerModel.PromiseState.settable] <;> omega
 
 /-! ## A promise stamped AT its deadline carries the deadline's verdict
 
@@ -458,6 +484,9 @@ theorem hp_deadlineVerdict : HPromise qDeadlineVerdict where
   dropCallback p a h := by simpa [qDeadlineVerdict] using h
   live id param tags timeoutAt createdAt h := by simp [qDeadlineVerdict]
   dead id st param tags timeoutAt hst := by subst hst; split <;> simp_all [qDeadlineVerdict]
+  decided id param tags timeoutAt createdAt st v hlt hset := by
+    cases st <;>
+      simp_all [qDeadlineVerdict, ServerModel.PromiseState.settable] <;> omega
 
 /-! ## A pending promise carries no verdict, and neither does a deadline settlement
 
@@ -497,6 +526,9 @@ theorem hp_noValueUnlessSettled : HPromise qNoValueUnlessSettled where
   dropCallback p a h := by simpa [qNoValueUnlessSettled] using h
   live id param tags timeoutAt createdAt h := by simp [qNoValueUnlessSettled]
   dead id st param tags timeoutAt hst := by subst hst; split <;> simp [qNoValueUnlessSettled]
+  decided id param tags timeoutAt createdAt st v hlt hset := by
+    cases st <;>
+      simp_all [qNoValueUnlessSettled, ServerModel.PromiseState.settable] <;> omega
 
 /-! # The task entries
 

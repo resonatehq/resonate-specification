@@ -86,20 +86,23 @@ door you did not write.
 Every 400 in the machine, and the property that shadows it:
 
     promise.create      timer + target        well_formed_promise_timer_not_targeted
+    promise.create      malformed combinator  well_formed_promise_combinator_is_well_formed
     promise.settle      state = pending       well_formed_promise_settled_at_iff_not_pending
     promise.settle      state = timedout      well_formed_promise_timedout_is_server_owned
     promise.callback    awaited = awaiter     well_formed_promise_awaiter_is_not_self
     task.create         untargeted / timer    consistent_task_iff_kind_task
+    task.create         malformed combinator  well_formed_promise_combinator_is_well_formed
     task.suspend        no actions            consistent_suspended_task_holds_rung
     task.suspend        self-await            well_formed_promise_awaiter_is_not_self
     task.suspend        duplicate awaited     well_formed_promise_callbacks_unique
     task.fulfill        state not settable    well_formed_promise_timedout_is_server_owned
                                               well_formed_promise_settled_at_iff_not_pending
     schedule.create     timer + target        well_formed_schedule_promise_tags_not_timer_targeted
+    schedule.create     combinator            well_formed_schedule_promise_tags_not_combinator
 
     task.fence          action targets self   — no shadow, see below
 
-Eleven of the twelve leave a row a property can name. `task.fence`'s
+Thirteen of the fourteen leave a row a property can name. `task.fence`'s
 self-target check does not, and the reason is worth stating rather than
 hiding: a fence bypass writes a state that is *legal in every respect*.
 The task is acquired, its promise is pending, the action settles that
@@ -110,6 +113,16 @@ promise it is executing. Authority is provenance, and provenance is not
 visible in a state or in a pair of states, so this one belongs to the
 `internalChecks` family at the bottom of the file in spirit, and to your
 own implementation's tests in practice.
+
+Combinators add two 422s that read as door checks in everything but the
+status code, and they are shadowed the same way. Both are 422 rather
+than 400 because both are about promises that already exist, which a
+request cannot be judged against on its own:
+
+    promise.create      a named child is      consistent_combinator_children_exist
+                        absent or internal
+    promise.settle      the target is a       consistent_combinator_settlement_matches_rule
+                        combinator
 
 ## Plausible and false
 
@@ -342,6 +355,14 @@ def well_formed_schedule_promise_tags_not_timer_targeted (_now : Nat) (s : Serve
   s.schedules.all fun c =>
     !c.promiseTags.timerTargeted
 
+/-- A schedule does not carry a combinator. Its promise id is expanded
+    per occurrence and its param is not, so every firing would name the
+    same children and the second occurrence would combine promises the
+    first one already consumed. The shadow of `schedule.create`'s 400. -/
+def well_formed_schedule_promise_tags_not_combinator (_now : Nat) (s : ServerState) : Bool :=
+  s.schedules.all fun c =>
+    !c.promiseTags.isCombinator
+
 def well_formed_schedule_created_at_lte_next_run_at (_now : Nat) (s : ServerState) : Bool :=
   s.schedules.all fun c =>
     c.createdAt ≤ c.nextRunAt
@@ -380,10 +401,58 @@ def consistent_settled_promise_has_fulfilled_task (_now : Nat) (s : ServerState)
   s.objects.all fun o =>
     o.promise.state == .pending || o.task.all (·.state == .fulfilled)
 
-def consistent_callback_awaiter_is_targeted (_now : Nat) (s : ServerState) : Bool :=
+/-- Every registered awaiter is a row that can TAKE a resume.
+
+    Two kinds can: a `runnable` promise, which has a task to wake, and a
+    `combinator`, which has a rule to re-ask. Nothing else has anywhere
+    to put a resume, so a callback naming anything else is an obligation
+    the server can never discharge — a promise settles, the drain finds
+    the awaiter, and there is no worker and no rule.
+
+    This entry used to be `consistent_callback_awaiter_is_targeted` and
+    named `runnable` alone. Combinators are the second answer, and the
+    rename is not cosmetic: the old name said WHO the awaiter is, and
+    what the protocol needs is WHAT CAN BE DONE with it. An
+    implementation that reports the old name is checking the old,
+    stronger claim, and will reject every combinator. -/
+def consistent_callback_awaiter_is_resumable (_now : Nat) (s : ServerState) : Bool :=
   s.promises.all fun p =>
     p.callbacks.all fun a =>
-      s.objects.any (fun q => q.id == a && q.promise.otype == .runnable)
+      s.objects.any (fun q => q.id == a &&
+        (q.promise.otype == .runnable || q.promise.otype == .combinator))
+
+/-! ### Combinators
+
+Two entries, and the first one is the door.
+
+`combinatorWellFormed` is the predicate `promise.create` and
+`task.create` refuse a write with. Stating the entry AS that function —
+rather than as a transcription of it — is the strongest form the file's
+"the door check and the property are the same claim" rule can take:
+there is no second copy to drift. What it covers, unfolded, is the tag
+naming a rule this protocol implements, the absence of a target and of
+a timer tag, and the param being a faithful list of distinct
+same-origin child ids, none of them the combinator itself. -/
+
+def well_formed_promise_combinator_is_well_formed (_now : Nat) (s : ServerState) : Bool :=
+  s.objects.all fun o =>
+    combinatorWellFormed o.id o.promise.param o.promise.tags
+
+/-- Every child a combinator names is a promise in the store, and one
+    that may be awaited. The shadow of `promise.create`'s 422, and the
+    reason a combinator's verdict is always computable: `settledChildren`
+    can only reach a promise the store holds, so a combinator naming a
+    ghost would be one whose rule sees fewer children than it has and,
+    for `all`, could never settle.
+
+    It is also where acyclicity lives. A combinator's children exist
+    BEFORE it does and never include itself, so the awaits-edges a
+    combinator adds always point backwards in creation order and no
+    cycle of them can be built. -/
+def consistent_combinator_children_exist (_now : Nat) (s : ServerState) : Bool :=
+  s.objects.all fun o =>
+    o.promise.children.all fun c =>
+      s.objects.any (fun q => q.id == c && q.promise.otype.awaitable)
 
 def consistent_outbox_execute_names_existing_task (_now : Nat) (s : ServerState) : Bool :=
   s.outbox.all fun e =>
@@ -776,6 +845,56 @@ def consistent_suspension_registers_callback (_now : Nat) (a b : ServerState) : 
                  | some p => !p.callbacks.contains o.id)
              && q.promise.state == .pending)
 
+/-- The children of `children` that have settled, in param order, as of
+    `s` read at `now`. The same list `settledChildren` builds in the
+    machine, written here as a fold over the store so that the entry
+    below can be checked against a server that has never heard of the
+    Lean monad. -/
+def settledChildrenOf (now : Nat) (s : ServerState) (children : List Ident) : List Ident :=
+  children.filter fun c =>
+    match s.promise? c with
+    | none   => false
+    | some q => (q.project now).state != .pending
+
+/-- A combinator settles by its RULE, and by nothing else.
+
+    This is the entry combinators exist for. `Combinator.verdict` is one
+    function in `01-protocol/combinators.lean`; the machine calls it and
+    so does this, over the pre-state's settled children — so the claim
+    is not a restatement of the rule that could drift from it, it IS the
+    rule, asked of the transition.
+
+    Three ways out, and every combinator leaving `pending` must take one:
+
+      * it did not settle;
+      * its deadline arrived, which decides any promise;
+      * or its rule returned a verdict, and the row carries exactly
+        that verdict, stamped at `now`.
+
+    A server that resolves a race early, resolves an `all` before every
+    child is in, or reports a winner that never settled, fails here. So
+    does a server that lets a CLIENT settle a combinator — which is
+    why `promise.settle` answers 422 on one; without that door this
+    entry would be false of the machine rather than of the
+    implementation. -/
+def consistent_combinator_settlement_matches_rule (now : Nat) (a b : ServerState) : Bool :=
+  a.objects.all fun o =>
+    let p := o.promise
+    p.state != .pending || p.otype != .combinator ||
+      (match b.promise? o.id with
+       | none   => true
+       | some q =>
+           q.state == .pending
+             || (q.settledAt == some q.timeoutAt && q.timeoutAt ≤ now)
+             || (match p.tags.combinator with
+                 | none   => false
+                 | some c =>
+                     match c.verdict p.children (settledChildrenOf now a p.children) with
+                     | none         => false
+                     | some (st, v) =>
+                         q.state == st && q.settledAt == some now
+                           && q.value.data == v.data && q.value.headers == v.headers))
+
 def consistent_task_birth_couples_promise_birth (_now : Nat) (a b : ServerState) : Bool :=
   (b.objects.all fun o => o.task.all fun u =>
      a.hasTask o.id
@@ -966,8 +1085,20 @@ Applied to INTERNAL steps only, and false on request steps — which is
 what makes them strictly stronger than the general edge tables. A
 background sweeper may re-pend, fulfil, resume-from-suspended or
 refresh; it may never acquire, suspend, halt or continue a task, and it
-may settle a promise only by its deadline. A server whose reaper does
-any of the rest steals a lease or invents a verdict nobody asked for. -/
+may settle a promise only by its deadline — or, for a COMBINATOR, by
+the rule the combinator was created with. A server whose reaper does
+any of the rest steals a lease or invents a verdict nobody asked for.
+
+The combinator carve-out is narrow on purpose, and it is not a
+weakening in disguise. Everywhere else "the server settled it" means a
+deadline passed; a combinator is the one promise whose settlement is
+the server's job by construction, and the drain is the step that does
+it. So the edge admits `pending → resolved` for a combinator and NOT
+`pending → rejected`: no rule rejects, and a combinator that must not
+resolve waits for its deadline like anything else. What the verdict
+then has to BE is `consistent_combinator_settlement_matches_rule`,
+which pins it to the rule's own answer rather than leaving `resolved`
+unconstrained. -/
 
 def consistent_task_state_edge_internal_admissible (_now : Nat) (a b : ServerState) : Bool :=
   a.objects.all fun o => o.task.all fun t =>
@@ -995,7 +1126,8 @@ def consistent_promise_state_edge_internal_admissible (_now : Nat) (a b : Server
     | some q =>
         (p.state == q.state)
           || (p.state == .pending
-                && (q.state == .rejectedTimedout || (q.state == .resolved && p.isTimer)))
+                && (q.state == .rejectedTimedout
+                    || (q.state == .resolved && (p.isTimer || p.otype == .combinator))))
 
 def internalChecks : List Named :=
   [ { name := "consistent_task_state_edge_internal_admissible"
@@ -1043,20 +1175,40 @@ def preserved_timedout_is_server_owned (now : Nat) (a b : ServerState) : Bool :=
           | some q => q.state != .rejectedTimedout
                         || (p.timeoutAt ≤ now && q.settledAt == some p.timeoutAt))
 
-/-- A promise that appears in a step is born clean: no obligations, no
-    value, in the past, and in exactly one of the two birth shapes. -/
+/-- A promise that appears in a step is born clean: no obligations of
+    its own, created in the past, and in exactly one of the THREE birth
+    shapes.
+
+      pending   the ordinary birth, no value, deadline still ahead
+      dead      created at or after its own deadline, settled AT it,
+                verdict fixed by the timer tag, no value
+      decided   a combinator whose children had already settled when it
+                was created — resolved at `createdAt`, deadline still
+                ahead, carrying the value its rule computed
+
+    The third shape is the only birth that carries a value, and it is
+    the only one combinators required. It exists because nothing orders
+    a client's creates: a race created after the promises it races have
+    finished has an answer at the instant it is born, and the
+    alternative — arming a callback on a settled child — is a row
+    `monotone_promise_callbacks_shrink_once_settled` forbids.
+
+    `callbacks.isEmpty` still holds of all three. A combinator's
+    obligations are written on its CHILDREN, never on itself. -/
 def consistent_new_promise_born_clean (now : Nat) (a b : ServerState) : Bool :=
   b.objects.all fun o =>
     let q := o.promise
     a.objects.any (·.id == o.id)
       || (q.callbacks.isEmpty && q.listeners.isEmpty
-          && q.value.data.isNone && q.value.headers.isEmpty
           && q.createdAt ≤ now
-          && ((q.state == .pending && q.settledAt.isNone && q.createdAt < q.timeoutAt)
-              || (q.settledAt == some q.timeoutAt && q.createdAt == q.timeoutAt
-                  && q.timeoutAt ≤ now
-                  && (if q.isTimer then q.state == .resolved
-                      else q.state == .rejectedTimedout))))
+          && (((q.value.data.isNone && q.value.headers.isEmpty)
+                && ((q.state == .pending && q.settledAt.isNone && q.createdAt < q.timeoutAt)
+                    || (q.settledAt == some q.timeoutAt && q.createdAt == q.timeoutAt
+                        && q.timeoutAt ≤ now
+                        && (if q.isTimer then q.state == .resolved
+                            else q.state == .rejectedTimedout))))
+              || (q.otype == .combinator && q.state == .resolved
+                  && q.settledAt == some q.createdAt && q.createdAt < q.timeoutAt)))
 
 /-- A re-arm must move the deadline FORWARD. Re-arming a due task to an
     instant already past leaves the retry step enabled at the very
@@ -1157,6 +1309,8 @@ def catalogue : List Named :=
       , property := .state well_formed_task_acquired_version_positive },
     { name := "well_formed_schedule_promise_tags_not_timer_targeted"
       , property := .state well_formed_schedule_promise_tags_not_timer_targeted },
+    { name := "well_formed_schedule_promise_tags_not_combinator"
+      , property := .state well_formed_schedule_promise_tags_not_combinator },
     { name := "well_formed_schedule_created_at_lte_next_run_at"
       , property := .state well_formed_schedule_created_at_lte_next_run_at },
     { name := "well_formed_schedule_created_at_lte_last_run_at"
@@ -1173,8 +1327,12 @@ def catalogue : List Named :=
       , property := .state consistent_task_iff_kind_task },
     { name := "consistent_settled_promise_has_fulfilled_task"
       , property := .state consistent_settled_promise_has_fulfilled_task },
-    { name := "consistent_callback_awaiter_is_targeted"
-      , property := .state consistent_callback_awaiter_is_targeted },
+    { name := "consistent_callback_awaiter_is_resumable"
+      , property := .state consistent_callback_awaiter_is_resumable },
+    { name := "well_formed_promise_combinator_is_well_formed"
+      , property := .state well_formed_promise_combinator_is_well_formed },
+    { name := "consistent_combinator_children_exist"
+      , property := .state consistent_combinator_children_exist },
     { name := "consistent_outbox_execute_names_existing_task"
       , property := .state consistent_outbox_execute_names_existing_task },
     { name := "consistent_outbox_never_ahead"
@@ -1241,6 +1399,8 @@ def catalogue : List Named :=
       , property := .trans consistent_wake_follows_callback_consumption },
     { name := "consistent_suspension_registers_callback"
       , property := .trans consistent_suspension_registers_callback },
+    { name := "consistent_combinator_settlement_matches_rule"
+      , property := .trans consistent_combinator_settlement_matches_rule },
     { name := "consistent_task_birth_couples_promise_birth"
       , property := .trans consistent_task_birth_couples_promise_birth },
     { name := "monotone_outbox_keys_never_disappear"
