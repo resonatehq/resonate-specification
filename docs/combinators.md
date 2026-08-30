@@ -51,14 +51,25 @@ a race decided at instant 200 could be re-read later and find a child
 settled "at 50". Param order is a total order the client itself supplied
 and no later event can change it.
 
-### `race` resolves; it does not adopt the winner's verdict
+### A combinator resolves to IDS, never to an adopted verdict
 
-The combinator reports WHO finished, not WHAT they finished with — a
-value has room for one answer, and the identity is the answer only the
-race knows. The awaiter reads the winner's promise for its outcome.
+Settled: a combinator's value is the subset of its param that decided
+it — the winner for `race`, all of them for `all` — and it never adopts
+a child's state or value.
 
-This is a real divergence from JavaScript's `Promise.race`, which adopts.
-It is the decision most worth arguing about; see the open questions.
+That `all`'s value is then its param over again is a consequence, not a
+redundancy: one reading covers every rule, and the rule that names a
+proper subset is the ordinary case rather than the exception.
+
+The identity is the answer only the combinator knows; the outcome is
+already on the child's own promise, where anyone who has the id can
+read it. Adopting would throw the identity away, since a value has room
+for one answer. Presenting the winner's value as the result of the race
+is an SDK's job, and it has everything it needs to do it: the id.
+
+This is a divergence from JavaScript's `Promise.race`, and it is where
+the layering falls. The server says which promises decided the
+combinator; the SDK decides what a program sees.
 
 ### `all` is `allSettled`
 
@@ -127,14 +138,7 @@ will reject every combinator.
 
 ## Open questions
 
-1. **Should `race` adopt the winner's verdict?** Today a race whose
-   winner rejected still RESOLVES, naming the loser-of-nothing. That is
-   coherent — "the race finished, here is who won" — and it diverges
-   from every SDK's `race`. Adopting would mean the value can no longer
-   name the winner, unless the value grows structure. A third option is
-   two rules: `race` (reports the winner) and `race_adopt`.
-
-2. **Is the id-list encoding right?** The param is
+1. **Is the id-list encoding right?** The param is
    `Ident.render`ed ids joined by commas, and `Value.isIdList` demands
    the string round-trip. It is the trace's own encoding for one id,
    comma-lifted, and it keeps the machine's parsing kernel-transparent.
@@ -143,19 +147,14 @@ will reject every combinator.
    alternative is a dedicated tag (`resonate:combinator:children`),
    leaving `param` free.
 
-3. **Should the rules that never fire be reachable at all?** A `race`
+2. **Should the rules that never fire be reachable at all?** A `race`
    over an empty list, and any combinator whose children never settle,
    sit pending until their own deadline and then reject `timedout`.
    That matches the language semantics and it is a silent hang. A door
    check refusing an empty child list would close half of it; nothing
    closes the other half, which is the point of the deadline.
 
-4. **What should `all`'s value be?** Today it is all the child ids,
-   which is the param again. The alternative is an empty value — the
-   awaiter knows the ids — at the cost of losing the uniform reading
-   "a combinator's value names the children that decided it".
-
-5. **The next rules.** `any` (first to RESOLVE, ignoring rejections)
+3. **The next rules.** `any` (first to RESOLVE, ignoring rejections)
    and a fail-fast `all` are the two the skeleton was shaped for, and
    both are four lines. Neither is written, because both raise
    question 1 in a sharper form.
