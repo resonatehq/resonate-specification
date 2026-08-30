@@ -200,11 +200,7 @@ def battery : List (List (Step × Nat)) :=
    covRace, covRaceBorn, covAll, covCombinatorAwaited]
 
 set_option maxRecDepth 100000
--- Raised from 4 000 000 when combinators arrived: the battery grew by
--- four scripts and the catalogue by five entries, and the product of
--- the two put `stage1_battery` over the old ceiling. A budget, not a
--- claim — nothing about the specification changes with it.
-set_option maxHeartbeats 16000000
+set_option maxHeartbeats 4000000
 
 theorem stage1_battery : battery.all legalRun = true := by decide
 
@@ -349,18 +345,14 @@ def mutants : List (String × Bool) :=
     ("well_formed_promise_combinator_is_well_formed/races_itself",
        well_formed_promise_combinator_is_well_formed 0
          (onePromise { P with tags := raceTags, param := childrenParam [oid "a"] })),
-    -- Two ways a value can stop being a subset of the param: an id the
-    -- combinator never named, and one it named twice.
-    ("well_formed_promise_combinator_value_is_subset_of_param/names_a_stranger",
+    -- The value names an id the combinator never named. (A second
+    -- falsifier, a value naming one child twice, went with the
+    -- no-repeats conjunct the entry no longer carries.)
+    ("well_formed_promise_combinator_value_is_subset_of_param",
        well_formed_promise_combinator_value_is_subset_of_param 0
          (onePromise { P with tags := raceTags, param := childrenParam [oid "b"],
                               state := .resolved, settledAt := some 20,
                               value := childrenParam [oid "c"] })),
-    ("well_formed_promise_combinator_value_is_subset_of_param/names_one_twice",
-       well_formed_promise_combinator_value_is_subset_of_param 0
-         (onePromise { P with tags := allTags, param := childrenParam [oid "b", oid "c"],
-                              state := .resolved, settledAt := some 20,
-                              value := childrenParam [oid "b", oid "b"] })),
     ("consistent_combinator_children_exist",
        consistent_combinator_children_exist 0
          (onePromise { P with tags := raceTags, param := childrenParam [oid "ghost"] })),

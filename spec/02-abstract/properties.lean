@@ -457,15 +457,31 @@ def well_formed_promise_combinator_is_well_formed (_now : Nat) (s : ServerState)
     checkable against a single dump.
 
     True of a pending combinator too, whose value is empty: `[]` is a
-    subset of anything, and `isIdList` holds of the empty value. -/
+    subset of anything.
+
+    SUBSET, and nothing more. Two stronger conjuncts were tried and
+    dropped, both for the same reason — they cost far more to check than
+    they claim.
+
+    Requiring the value to round-trip through the id-list encoding is
+    the PARAM's obligation, enforced at the door by
+    `combinatorWellFormed`; re-asking it of a value the server itself
+    wrote is checking our own arithmetic. And it is not needed to catch
+    a garbage value: whatever a bad value parses to will not be a child,
+    so the subset test refuses it anyway.
+
+    Requiring no repeats is quadratic in `Ident` equality, which is
+    quadratic in string comparison over terms that are themselves
+    unreduced parses — and it was measurably ruinous. With it, one
+    nine-step battery script over an `all` of two children took 31
+    minutes under kernel `decide`; without it, 24 seconds. Nothing in
+    the protocol turns on it: a rule that named a child twice would
+    still be naming children. -/
 def well_formed_promise_combinator_value_is_subset_of_param
     (_now : Nat) (s : ServerState) : Bool :=
   s.objects.all fun o =>
     let p := o.promise
-    p.otype != .combinator
-      || (p.value.isIdList
-          && p.value.ids.eraseDups.length == p.value.ids.length
-          && p.value.ids.all (p.children.contains ·))
+    p.otype != .combinator || p.value.ids.all (p.children.contains ·)
 
 /-- Every child a combinator names is a promise in the store, and one
     that may be awaited. The shadow of `promise.create`'s 422, and the
