@@ -200,7 +200,11 @@ def battery : List (List (Step × Nat)) :=
    covRace, covRaceBorn, covAll, covCombinatorAwaited]
 
 set_option maxRecDepth 100000
-set_option maxHeartbeats 4000000
+/-- Raised from 4 000 000 when combinators arrived. The battery grew by
+    four scripts and the catalogue by five entries, and the product of
+    the two put `stage1_battery` over the old ceiling. It is a budget,
+    not a claim: nothing about the specification changes with it. -/
+set_option maxHeartbeats 16000000
 
 theorem stage1_battery : battery.all legalRun = true := by decide
 
