@@ -180,6 +180,29 @@ def covAll : List (Step × Nat) :=
     (.internal (.callback { awaited := oid "a2", awaiter := oid "al" }), 310),
     (.external (.promiseGet { id := oid "al" }), 320) ]
 
+/-- `all` over two children, ONE of which settled before the combinator
+    was created. Nothing orders a client's creates, so this is ordinary
+    rather than exotic — and it is the case the whole recomputation
+    decision turns on.
+
+    `a1` settles first, so at birth the rule sees one of two and the
+    combinator is born PENDING. `a1` is not armed and never will be:
+    obligations on a settled promise only drain. So `a1` never sends a
+    resume, and the only resume that ever arrives is `a2`'s.
+
+    It still settles naming BOTH, because `resumeCombinator` re-reads
+    the children rather than counting the resumes it has seen. A machine
+    that accumulated instead would have `a1` recorded nowhere, would
+    count one of two forever, and would hang until the deadline. -/
+def covAllMixed : List (Step × Nat) :=
+  [ (.external (.promiseCreate { id := oid "m1", timeoutAt := 9000, param := {}, tags := extTags }), 100),
+    (.external (.promiseCreate { id := oid "m2", timeoutAt := 9000, param := {}, tags := extTags }), 110),
+    (.external (.promiseSettle { id := oid "m1", state := .resolved, value := {} }), 120),
+    (.external (.promiseCreate { id := oid "mx", timeoutAt := 9000,
+                                 param := childrenParam [oid "m1", oid "m2"], tags := allTags }), 130),
+    (.external (.promiseSettle { id := oid "m2", state := .rejected, value := {} }), 200),
+    (.internal (.callback { awaited := oid "m2", awaiter := oid "mx" }), 210) ]
+
 def covCombinatorAwaited : List (Step × Nat) :=
   [ (.external (.promiseCreate { id := oid "e1", timeoutAt := 9000, param := {}, tags := extTags }), 100),
     (.external (.promiseCreate { id := oid "e2", timeoutAt := 9000, param := {}, tags := extTags }), 110),
@@ -197,7 +220,7 @@ def covCombinatorAwaited : List (Step × Nat) :=
 
 def battery : List (List (Step × Nat)) :=
   [wLag, b1, b2, b3, b4, b5, b6, covInternal, covListeners, covTwoTasks, covHalt,
-   covRace, covRaceBorn, covAll, covCombinatorAwaited]
+   covRace, covRaceBorn, covAll, covAllMixed, covCombinatorAwaited]
 
 set_option maxRecDepth 100000
 set_option maxHeartbeats 4000000
@@ -524,6 +547,24 @@ theorem all_waits_for_every_child :
     stateOf (List.take 6 covAll) (oid "al") = some .pending
       ∧ stateOf covAll (oid "al") = some .resolved
       ∧ valueOf covAll (oid "al") = some "o:a1,o:a2" := by decide
+
+/-- A child that settled BEFORE the combinator existed still counts.
+
+    Three claims in one, and the middle one is what makes the third
+    non-obvious: the create is accepted (a settled child is not a 422),
+    the combinator is born pending with only the still-pending child
+    armed, and the single resume that eventually arrives — `m2`'s —
+    settles it naming BOTH children.
+
+    `m1` is in that value having never sent a resume. This is the
+    script that would fail on a machine that accumulated resumes
+    instead of re-reading its children. -/
+theorem all_counts_a_child_settled_before_birth :
+    stateOf (List.take 4 covAllMixed) (oid "mx") = some .pending
+      ∧ ((finalOf (List.take 4 covAllMixed)).promise? (oid "m1")).map (·.callbacks)
+          = some []
+      ∧ stateOf covAllMixed (oid "mx") = some .resolved
+      ∧ valueOf covAllMixed (oid "mx") = some "o:m1,o:m2" := by decide
 
 /-- A client may not settle a combinator. The last step of `covRaceBorn`
     is a `promise.settle` against the race, and it answers 422. -/
