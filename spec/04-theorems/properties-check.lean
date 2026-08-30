@@ -345,6 +345,18 @@ def mutants : List (String × Bool) :=
     ("well_formed_promise_combinator_is_well_formed/races_itself",
        well_formed_promise_combinator_is_well_formed 0
          (onePromise { P with tags := raceTags, param := childrenParam [oid "a"] })),
+    -- Two ways a value can stop being a subset of the param: an id the
+    -- combinator never named, and one it named twice.
+    ("well_formed_promise_combinator_value_is_subset_of_param/names_a_stranger",
+       well_formed_promise_combinator_value_is_subset_of_param 0
+         (onePromise { P with tags := raceTags, param := childrenParam [oid "b"],
+                              state := .resolved, settledAt := some 20,
+                              value := childrenParam [oid "c"] })),
+    ("well_formed_promise_combinator_value_is_subset_of_param/names_one_twice",
+       well_formed_promise_combinator_value_is_subset_of_param 0
+         (onePromise { P with tags := allTags, param := childrenParam [oid "b", oid "c"],
+                              state := .resolved, settledAt := some 20,
+                              value := childrenParam [oid "b", oid "b"] })),
     ("consistent_combinator_children_exist",
        consistent_combinator_children_exist 0
          (onePromise { P with tags := raceTags, param := childrenParam [oid "ghost"] })),
@@ -532,6 +544,14 @@ theorem combinator_is_awaitable :
 theorem combinator_wakes_its_awaiter :
     stateOf covCombinatorAwaited (oid "ec") = some .resolved
       ∧ taskStateOf covCombinatorAwaited (oid "x") = some .pending := by decide
+
+/-- The guard of `well_formed_promise_combinator_value_is_subset_of_param`:
+    a combinator carrying a NON-EMPTY value. It is trivially satisfied by
+    a pending one, whose value is empty and is a subset of anything, so
+    without this the entry could pass on a corpus where it says nothing. -/
+theorem reaches_combinator_value :
+    witnesses battery (fun s => s.promises.any (fun p =>
+      p.otype == .combinator && !p.value.ids.isEmpty)) = true := by decide
 
 /-! ### Reach, for the combinator entries -/
 

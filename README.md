@@ -22,7 +22,7 @@ not another implementation. This repository is that answer, in three parts:
 
 - **the machine** says what the server does — one step per request, plus the
   steps it takes on its own initiative;
-- **the catalogue** says what must be true of it — 97 properties, each a
+- **the catalogue** says what must be true of it — 98 properties, each a
   decidable predicate on a state or on a pair of consecutive states;
 - **the checker** takes a trace recorded from a real server and asks whether
   the machine can account for it.
@@ -51,9 +51,9 @@ alternatives that were rejected and the questions still open.
 ## Status
 
 Every entry of the catalogue holds over 1 464 enumerated scripts, under
-both read disciplines, checked by kernel `decide` at build time. Of the 97
+both read disciplines, checked by kernel `decide` at build time. Of the 98
 entries, 31 are proved outright — true at every instant of every run, no
-bound and no sample. The remaining 66, and the theorem that collects them
+bound and no sample. The remaining 67, and the theorem that collects them
 (`valid_implies_legal`), are stated and open.
 
 ## Build

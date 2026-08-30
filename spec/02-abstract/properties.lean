@@ -438,6 +438,35 @@ def well_formed_promise_combinator_is_well_formed (_now : Nat) (s : ServerState)
   s.objects.all fun o =>
     combinatorWellFormed o.id o.promise.param o.promise.tags
 
+/-- A combinator's value names promises it was created to combine, and
+    nothing else — always a subset of its param, never a repeat, never
+    an id from anywhere.
+
+    This is the invariant that makes the value READABLE. An awaiter that
+    holds a settled combinator can take the ids out of its value and
+    look each one up, knowing every one of them is a promise it already
+    named. Without it the value is an opaque blob that happens to look
+    like ids.
+
+    Note the shape: `.state`, not `.trans`. The transition entry below
+    pins the value the settling STEP writes, which leaves two ways a bad
+    value could exist that it cannot see — a combinator born decided,
+    which is in no pre-state, and any state an implementation arrives at
+    by a route this machine does not have. This one holds at every
+    instant, of every combinator, however the row got there, and is
+    checkable against a single dump.
+
+    True of a pending combinator too, whose value is empty: `[]` is a
+    subset of anything, and `isIdList` holds of the empty value. -/
+def well_formed_promise_combinator_value_is_subset_of_param
+    (_now : Nat) (s : ServerState) : Bool :=
+  s.objects.all fun o =>
+    let p := o.promise
+    p.otype != .combinator
+      || (p.value.isIdList
+          && p.value.ids.eraseDups.length == p.value.ids.length
+          && p.value.ids.all (p.children.contains ·))
+
 /-- Every child a combinator names is a promise in the store, and one
     that may be awaited. The shadow of `promise.create`'s 422, and the
     reason a combinator's verdict is always computable: `settledChildren`
@@ -1333,6 +1362,8 @@ def catalogue : List Named :=
       , property := .state well_formed_promise_combinator_is_well_formed },
     { name := "consistent_combinator_children_exist"
       , property := .state consistent_combinator_children_exist },
+    { name := "well_formed_promise_combinator_value_is_subset_of_param"
+      , property := .state well_formed_promise_combinator_value_is_subset_of_param },
     { name := "consistent_outbox_execute_names_existing_task"
       , property := .state consistent_outbox_execute_names_existing_task },
     { name := "consistent_outbox_never_ahead"
