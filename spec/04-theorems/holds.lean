@@ -350,7 +350,7 @@ open AbstractModel
 def sneaky : ServerState :=
   { objects := [{ id := oid "p",
                   promise := { state := .pending, param := {},
-                               value := { data := some "x", headers := [] },
+                               value := { data := some (.any "x"), headers := [] },
                                tags := [], timeoutAt := 10, createdAt := 0 } }] }
 
 theorem sneaky_satisfies_the_entry :

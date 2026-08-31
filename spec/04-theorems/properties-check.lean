@@ -281,7 +281,7 @@ def mutants : List (String × Bool) :=
     ("well_formed_promise_settled_at_iff_not_pending/no_settled_at_when_settled",
        well_formed_promise_settled_at_iff_not_pending 0 (onePromise { P with state := .resolved })),
     ("well_formed_promise_pending_has_no_value",
-       well_formed_promise_pending_has_no_value 0 (onePromise { P with value := { data := some "x" } })),
+       well_formed_promise_pending_has_no_value 0 (onePromise { P with value := { data := some (.any "x") } })),
     ("well_formed_promise_timer_not_targeted",
        well_formed_promise_timer_not_targeted 0 (onePromise { P with tags := [("resonate:timer","true"), ("resonate:target","w")] })),
     -- the forged verdict: a client names `rejectedTimedout` and the row
@@ -334,7 +334,7 @@ def mutants : List (String × Bool) :=
     ("well_formed_promise_deadline_verdict_matches_timer_tag",
        well_formed_promise_deadline_verdict_matches_timer_tag 0 (onePromise { P with tags := [("resonate:timer","true")], state := .rejectedTimedout, settledAt := some 100 })),
     ("well_formed_promise_deadline_settlement_has_no_value",
-       well_formed_promise_deadline_settlement_has_no_value 0 (onePromise { P with state := .rejectedTimedout, settledAt := some 100, value := { data := some "boom" } })),
+       well_formed_promise_deadline_settlement_has_no_value 0 (onePromise { P with state := .rejectedTimedout, settledAt := some 100, value := { data := some (.any "boom") } })),
     ("well_formed_task_acquired_version_positive",
        well_formed_task_acquired_version_positive 0 (oneTask { T with state := .acquired, version := 0, pid := some "w", ttl := some 1, leaseTimeoutAt := some 1, retryTimeoutAt := none })),
     -- Both halves of the entry still have a violator to name. Fusing
@@ -360,11 +360,13 @@ def mutants : List (String × Bool) :=
     ("well_formed_promise_combinator_is_well_formed/targeted",
        well_formed_promise_combinator_is_well_formed 0
          (onePromise { P with tags := [("resonate:combinator","race"), ("resonate:target","w")] })),
-    -- `"o:"` renders back as `"o"`, so the param does not round-trip
-    -- through the id-list encoding and is not a child list.
-    ("well_formed_promise_combinator_is_well_formed/param_not_an_id_list",
+    -- Opaque bytes where a `ref` is required. Under the old string
+    -- encoding this needed a param that failed to round-trip; with
+    -- `Data` a sum, it is simply the other constructor.
+    ("well_formed_promise_combinator_is_well_formed/param_is_not_a_ref",
        well_formed_promise_combinator_is_well_formed 0
-         (onePromise { P with tags := raceTags, param := { data := some "o:" } })),
+         (onePromise { P with tags := raceTags,
+                              param := { data := some (.any "a1,a2") } })),
     ("well_formed_promise_combinator_is_well_formed/races_itself",
        well_formed_promise_combinator_is_well_formed 0
          (onePromise { P with tags := raceTags, param := childrenParam [oid "a"] })),
@@ -502,8 +504,8 @@ def stateOf (w : List (Step × Nat)) (id : ServerModel.Ident) :
     Option ServerModel.PromiseState :=
   ((finalOf w).promise? id).map (·.state)
 
-def valueOf (w : List (Step × Nat)) (id : ServerModel.Ident) : Option String :=
-  ((finalOf w).promise? id).bind (·.value.data)
+def valueOf (w : List (Step × Nat)) (id : ServerModel.Ident) : List ServerModel.Ident :=
+  (((finalOf w).promise? id).map (·.value.ids)).getD []
 
 def taskStateOf (w : List (Step × Nat)) (id : ServerModel.Ident) :
     Option ServerModel.TaskState :=
@@ -522,7 +524,7 @@ def statusesOf (w : List (Step × Nat)) : List Nat :=
 /-- The race resolves, and its value NAMES the winner. -/
 theorem race_resolves_naming_the_winner :
     stateOf covRace (oid "r") = some .resolved
-      ∧ valueOf covRace (oid "r") = some "o:c2" := by decide
+      ∧ valueOf covRace (oid "r") = [oid "c2"] := by decide
 
 /-- And the loser settling later does not move it. `c1` is rejected at
     230 and its drain fires at 240; the race is already settled, so the
@@ -538,7 +540,7 @@ theorem race_ignores_the_loser :
     way the answer could have been reached. -/
 theorem race_born_decided :
     stateOf (List.take 4 covRaceBorn) (oid "rb") = some .resolved
-      ∧ valueOf (List.take 4 covRaceBorn) (oid "rb") = some "o:d1" := by decide
+      ∧ valueOf (List.take 4 covRaceBorn) (oid "rb") = [oid "d1"] := by decide
 
 /-- `all` waits. After the first child settles and its drain fires the
     combinator is still pending; only the second drain settles it, and
@@ -546,7 +548,7 @@ theorem race_born_decided :
 theorem all_waits_for_every_child :
     stateOf (List.take 6 covAll) (oid "al") = some .pending
       ∧ stateOf covAll (oid "al") = some .resolved
-      ∧ valueOf covAll (oid "al") = some "o:a1,o:a2" := by decide
+      ∧ valueOf covAll (oid "al") = [oid "a1", oid "a2"] := by decide
 
 /-- A child that settled BEFORE the combinator existed still counts.
 
@@ -564,7 +566,7 @@ theorem all_counts_a_child_settled_before_birth :
       ∧ ((finalOf (List.take 4 covAllMixed)).promise? (oid "m1")).map (·.callbacks)
           = some []
       ∧ stateOf covAllMixed (oid "mx") = some .resolved
-      ∧ valueOf covAllMixed (oid "mx") = some "o:m1,o:m2" := by decide
+      ∧ valueOf covAllMixed (oid "mx") = [oid "m1", oid "m2"] := by decide
 
 /-- A client may not settle a combinator. The last step of `covRaceBorn`
     is a `promise.settle` against the race, and it answers 422. -/

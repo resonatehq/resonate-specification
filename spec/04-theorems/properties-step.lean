@@ -85,7 +85,7 @@ def stepMutants : List (String × Bool) :=
     ("preserved_settled_promise_record/settled_at_restamped",
        preserved_settled_promise_record 0 { objects := [objOf (oid "a") (S)] } { objects := [objOf (oid "a") ({ S with settledAt := some 90 })] }),
     ("preserved_settled_promise_record/value_rewritten",
-       preserved_settled_promise_record 0 { objects := [objOf (oid "a") (S)] } { objects := [objOf (oid "a") ({ S with value := { data := some "x" } })] }),
+       preserved_settled_promise_record 0 { objects := [objOf (oid "a") (S)] } { objects := [objOf (oid "a") ({ S with value := { data := some (.any "x") } })] }),
     ("monotone_promise_set_grows",
        monotone_promise_set_grows 0 { objects := [objOf (oid "a") (P)] } { objects := [] }),
     ("monotone_task_set_grows",
@@ -112,7 +112,7 @@ def stepMutants : List (String × Bool) :=
     ("consistent_promise_settled_at_moves_with_state",
        consistent_promise_settled_at_moves_with_state 0 { objects := [objOf (oid "a") (P)] } { objects := [objOf (oid "a") ({ P with state := .resolved })] }),
     ("preserved_promise_value_until_settlement",
-       preserved_promise_value_until_settlement 0 { objects := [objOf (oid "a") (P)] } { objects := [objOf (oid "a") ({ P with value := { data := some "v" } })] }),
+       preserved_promise_value_until_settlement 0 { objects := [objOf (oid "a") (P)] } { objects := [objOf (oid "a") ({ P with value := { data := some (.any "v") } })] }),
     ("preserved_promise_no_duplicate_ids",
        preserved_promise_no_duplicate_ids 0 { } { objects := [objOf (oid "a") (P), objOf (oid "a") (P)] }),
     ("monotone_promise_callbacks_grow_while_pending",
@@ -181,7 +181,7 @@ def stepMutants : List (String × Bool) :=
     ("consistent_new_promise_born_clean/born_decided_without_the_tag",
        consistent_new_promise_born_clean 50 { }
          { objects := [objOf (oid "a")
-             ({ P with state := .resolved, value := { data := some "o:b" },
+             ({ P with state := .resolved, value := Value.ofIds [oid "b"],
                        settledAt := some 10 })] }),
     -- A race that settles before any child has: `b` is pending in the
     -- pre-state, so the rule returns `none` and there is no verdict the

@@ -90,54 +90,34 @@ theorem combinator_implies_isCombinator (t : Tags) :
   unfold Tags.combinator Tags.isCombinator Tags.has
   cases h : t.get? "resonate:combinator" <;> simp
 
-/-! ## An id list, on the wire
+/-! ## Reading a combinator's children
 
-A combinator's param IS its child list, and its value IS the children
-that decided it. Both are the same encoding: `Ident.render`ed ids
-joined by commas, which is the encoding a trace already carries for one
-id, comma-lifted.
+`Data.ref` carries the ids already, so there is nothing to parse. These
+two are projections, kept as names because the door, the machine and
+the catalogue all ask the same two questions and should ask them
+through the same words.
 
-`splitOnComma` is written out rather than taken from core so that the
-kernel can reduce it: every sweep in `04-theorems` evaluates these by
-`decide`.
+What was here before was an encoding — ids rendered and comma-joined
+into a string, a parser, a renderer, and `isIdList`, a predicate
+demanding the string round-trip so that a comma inside an id could not
+smuggle in a second one. All of it is gone, along with the question it
+existed to answer. -/
 
-A comma cannot appear inside an id under this encoding, and nothing
-needs to say so separately: `isIdList` demands that rendering the parse
-gives the original string back, so an id carrying a comma fails to
-round-trip and the door refuses it. -/
-
-private def splitOnComma : List Char → List (List Char)
-  | []        => [[]]
-  | ',' :: cs => [] :: splitOnComma cs
-  | c :: cs   =>
-      match splitOnComma cs with
-      | p :: ps => (c :: p) :: ps
-      | []      => [[c]]
-
-def Ident.parseList (s : String) : List Ident :=
-  if s.isEmpty then [] else (splitOnComma s.toList).map (fun cs => Ident.parse (String.ofList cs))
-
-def Ident.renderList : List Ident → String
-  | []      => ""
-  | [i]     => i.render
-  | i :: is => i.render ++ "," ++ Ident.renderList is
-
-/-- The ids a value carries. Total: a value that is not an id list
-    parses to whatever it parses to, and `isIdList` is the predicate
-    that says whether that reading was faithful. Only ever consulted
-    where the tags say the value is one. -/
 def Value.ids (v : Value) : List Ident :=
-  Ident.parseList (v.data.getD "")
+  match v.data with
+  | some d => d.refs
+  | none   => []
 
 def Value.ofIds (ids : List Ident) : Value :=
-  { data := some (Ident.renderList ids) }
+  { data := some (.ref ids) }
 
-/-- The value round-trips through the id-list encoding: what it holds
-    is exactly what rendering its parse produces. This is the
-    "the param must be a list of promise ids" constraint, as a
-    decidable predicate on the value the client actually sent. -/
-def Value.isIdList (v : Value) : Bool :=
-  Ident.renderList v.ids == v.data.getD ""
+/-- The value IS a reference, rather than opaque bytes that happen to
+    parse as one. A combinator's param must be one; anything else is
+    not a child list, and `none` is not one either. -/
+def Value.isRef (v : Value) : Bool :=
+  match v.data with
+  | some d => d.isRef
+  | none   => false
 
 /-! ## The door
 
@@ -157,7 +137,7 @@ apart. -/
       * no deadline decides a combinator either, so it is not a timer —
         a timer resolves AT `timeoutAt` and a combinator rejects there,
         and a promise cannot be both;
-      * the param is an id list, faithfully;
+      * the param is a `ref`, not opaque bytes;
       * and the children are distinct, none of them the combinator
         itself, all in its origin — the last so that an awaits-edge
         never leaves the shard it started in, which is the same rule
@@ -170,7 +150,7 @@ def combinatorWellFormed (id : Ident) (param : Value) (tags : Tags) : Bool :=
     || (tags.combinator.isSome
         && !tags.has "resonate:target"
         && !tags.isTimer
-        && param.isIdList
+        && param.isRef
         && (let cs := param.ids
             cs.eraseDups.length == cs.length
               && cs.all (fun c => c != id && c.sameOrigin id)))

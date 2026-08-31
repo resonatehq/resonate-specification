@@ -11,9 +11,46 @@ def Ident.sameOrigin (a b : Ident) : Bool := a.origin == b.origin
 
 abbrev Tags := List (String × String)
 
+/-- What a promise carries, as a TYPE rather than as a convention.
+
+    Two shapes, and the machine branches on the constructor:
+
+      `any`  opaque application bytes. The specification never looks
+             inside one and has nothing to say about it.
+      `ref`  promise ids. The one shape the protocol itself reads —
+             a combinator's param names the promises it combines, and
+             its value names the ones that decided it.
+
+    This used to be a `String` with an encoding on top: ids rendered
+    and comma-joined, plus a predicate demanding the string round-trip
+    faithfully. Making it a sum deletes the encoding, the parse, the
+    round-trip predicate and the door check that enforced it — every
+    question the machine asks about a param is now a `match`.
+
+    It also deletes a real cost. The encoding was parsed and re-rendered
+    by every catalogue entry that touched a value, and the kernel had to
+    reduce those nested string operations on every state of every sweep:
+    one nine-step script over an `all` of two children took 31 minutes
+    under `decide`. Nothing about the protocol was slow — the
+    representation was. -/
+inductive Data
+  | any (bytes : String)
+  | ref (ids : List Ident)
+  deriving Repr, DecidableEq
+
+instance : BEq Data := instBEqOfDecidableEq
+
+def Data.refs : Data → List Ident
+  | .ref ids => ids
+  | .any _   => []
+
+def Data.isRef : Data → Bool
+  | .ref _ => true
+  | .any _ => false
+
 structure Value where
-  headers : Tags          := []
-  data    : Option String := none
+  headers : Tags        := []
+  data    : Option Data := none
   deriving Repr, Inhabited
 
 inductive PromiseState

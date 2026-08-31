@@ -83,35 +83,6 @@ def TaskFenceAction.targetId : TaskFenceAction → Ident
   | .create r => r.id
   | .settle r => r.id
 
-/-! ## The wire form of an id
-
-`Ident` is a pair; the wire carries one string. `render` and `parse`
-are the seam, and they live HERE rather than in the trace checker
-because the specification itself now has to write an id into a value —
-a combinator's verdict names the promises that decided it — and read
-one back out. The checker used to own both; owning them there made the
-encoding a property of one consumer instead of a property of the
-protocol.
-
-`render` is `origin:suffix`, with exactly one colon, and a bare origin
-when the suffix is empty. `parse` is its inverse, structurally
-recursive over `toList` in the house style so nothing here is opaque to
-the kernel. -/
-
-def Ident.render (i : Ident) : String :=
-  if i.suffix.isEmpty then i.origin else i.origin ++ ":" ++ i.suffix
-
-private def splitColon : List Char → List Char × List Char
-  | []          => ([], [])
-  | ':' :: rest => ([], rest)
-  | c :: cs     => let (o, r) := splitColon cs; (c :: o, r)
-
-/-- An id with no colon is its own origin, which is what makes `parse`
-    the inverse of `render` on every id `render` can produce. -/
-def Ident.parse (s : String) : Ident :=
-  let (o, r) := splitColon s.toList
-  { origin := String.ofList o, suffix := String.ofList r }
-
 def parseNat (s : String) : Nat :=
   go s.toList 0
 where

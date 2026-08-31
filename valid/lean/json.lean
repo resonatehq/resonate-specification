@@ -59,10 +59,31 @@ def tagsOf (j : Json) : Tags :=
 def tagsAt (j : Json) (k : String) : Tags :=
   match obj? j k with | .ok v => tagsOf v | _ => []
 
-/-- `{"headers":{…},"data":"…"}`, both optional — resonate emits a bare
-    `{}` when neither is set. -/
+/-- The two shapes of `Data`, on the wire.
+
+    `{"refs": ["o:a", "o:b"]}` is a `ref` — the ids a combinator names.
+    `{"data": "…"}` is `any` — opaque bytes the specification never
+    looks inside. `refs` wins if both are present, since only one of
+    them can be what a promise carries.
+
+    This is the ONLY place the two are told apart. Inside the machine
+    the constructor answers the question, which is the point of making
+    `Data` a sum rather than a string with an encoding on top. -/
+private def dataOf (j : Json) : Option Data :=
+  match obj? j "refs" with
+  | .ok v =>
+      match v.getArr? with
+      | .ok xs => some (.ref (xs.toList.filterMap fun x =>
+                   match x.getStr? with
+                   | .ok s => some (ServerModel.Ident.parse s)
+                   | _     => none))
+      | _ => (strOpt j "data").map Data.any
+  | _ => (strOpt j "data").map Data.any
+
+/-- `{"headers":{…}}` plus one of `data` / `refs`, all optional —
+    resonate emits a bare `{}` when none is set. -/
 def valueOf (j : Json) : Value :=
-  { headers := tagsAt j "headers", data := strOpt j "data" }
+  { headers := tagsAt j "headers", data := dataOf j }
 
 def valueAt (j : Json) (k : String) : Value :=
   match obj? j k with | .ok v => valueOf v | _ => {}
