@@ -62,7 +62,7 @@ def tagsAt (j : Json) (k : String) : Tags :=
 /-- The two shapes of `Data`, on the wire.
 
     `{"refs": ["o:a", "o:b"]}` is a `ref` — the ids a combinator names.
-    `{"data": "…"}` is `any` — opaque bytes the specification never
+    `{"data": "…"}` is `any` — an opaque string the specification never
     looks inside. `refs` wins if both are present, since only one of
     them can be what a promise carries.
 

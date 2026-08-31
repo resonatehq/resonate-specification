@@ -360,7 +360,7 @@ def mutants : List (String × Bool) :=
     ("well_formed_promise_combinator_is_well_formed/targeted",
        well_formed_promise_combinator_is_well_formed 0
          (onePromise { P with tags := [("resonate:combinator","race"), ("resonate:target","w")] })),
-    -- Opaque bytes where a `ref` is required. Under the old string
+    -- An opaque string where a `ref` is required. Under the old
     -- encoding this needed a param that failed to round-trip; with
     -- `Data` a sum, it is simply the other constructor.
     ("well_formed_promise_combinator_is_well_formed/param_is_not_a_ref",

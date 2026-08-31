@@ -15,8 +15,8 @@ abbrev Tags := List (String × String)
 
     Two shapes, and the machine branches on the constructor:
 
-      `any`  opaque application bytes. The specification never looks
-             inside one and has nothing to say about it.
+      `any`  an opaque application string. The specification never
+             looks inside one and has nothing to say about it.
       `ref`  promise ids. The one shape the protocol itself reads —
              a combinator's param names the promises it combines, and
              its value names the ones that decided it.
@@ -34,7 +34,7 @@ abbrev Tags := List (String × String)
     under `decide`. Nothing about the protocol was slow — the
     representation was. -/
 inductive Data
-  | any (bytes : String)
+  | any (str : String)
   | ref (ids : List Ident)
   deriving Repr, DecidableEq
 

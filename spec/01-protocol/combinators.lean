@@ -111,7 +111,7 @@ def Value.ids (v : Value) : List Ident :=
 def Value.ofIds (ids : List Ident) : Value :=
   { data := some (.ref ids) }
 
-/-- The value IS a reference, rather than opaque bytes that happen to
+/-- The value IS a reference, rather than an opaque string that happens to
     parse as one. A combinator's param must be one; anything else is
     not a child list, and `none` is not one either. -/
 def Value.isRef (v : Value) : Bool :=
@@ -137,7 +137,7 @@ apart. -/
       * no deadline decides a combinator either, so it is not a timer —
         a timer resolves AT `timeoutAt` and a combinator rejects there,
         and a promise cannot be both;
-      * the param is a `ref`, not opaque bytes;
+      * the param is a `ref`, not an opaque string;
       * and the children are distinct, none of them the combinator
         itself, all in its origin — the last so that an awaits-edge
         never leaves the shard it started in, which is the same rule
