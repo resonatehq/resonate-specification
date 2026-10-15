@@ -637,6 +637,45 @@ a third candidate extension.
    `create(key, {input})` as a parameterized `initial` riding the first
    message's envelope.
 
+### 7.6 Addendum (2026-10): the sequencer supersedes the ranking above
+
+Design decision: **senders do not choose or derive message ids — the server
+assigns dense, sequentially increasing ids per key.** One new create mode:
+
+```
+resonate:seq    = <key>    create assigns id <key>:m{n}, n = the key's
+                           counter, atomically; stamps origin tags
+resonate:seq-ik = <ik>     ik → assigned-id dedup (bounded window), so a
+                           sender retry re-lands on the SAME slot
+```
+
+Prototyped (`seq.ts` + `seq.test.ts`, emulated at the same middleware seam
+as the serial coordinator; chain runtime gains a `sequencer` mode). What it
+dissolves, measured against §5.1's costs and the known gaps:
+
+* the head probe — enqueue is ONE idempotent RPC;
+* CAS retry loops and their unfairness under fan-in — the server linearizes;
+* the adopt-window exactly-once caveat — ik dedup is server-side and exact;
+* the retention hazard (the worst open issue): the counter is server state,
+  not re-derived from surviving ids, so GC may reap settled slots freely;
+* the key-injection surface at this seam — senders never write an id.
+
+And because assigned ids are dense, the predecessor stays arithmetic:
+**S2's stamp is subsumed**, and S1's dispatch gating becomes an optional
+later add-on (for queue-depth admission control and release-side batching)
+rather than a prerequisite. Dispatch, tasks, and serialization-by-awaited-
+predecessor remain completely stock — the sequencer is a *data-plane*
+extension (one atomic effect: increment + create with derived id; invariants
+`SeqDense`, `SeqLinearized`, plus a bounded ik-dedup table), not a scheduling
+constraint, so it is strictly smaller to specify than S1.
+
+Revised recommendation order: **(1) `resonate:seq`** — the minimal server
+change that makes chain objects production-shaped; (2) retention policy,
+now easy (keep the counter + last resolved snapshot per key); (3) `ctx.attach`
+in the SDKs; (4) `resonate:serial` S1 only when dispatch-side policy
+(backpressure, batch release) is wanted; (5) `fulfill`-with-creates for
+transactional outbox/alarm arming.
+
 ## 8. Open questions / future work
 
 * **DST coverage.** The prototypes are tested against the deterministic
