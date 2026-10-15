@@ -6,4 +6,4 @@ build on it (or when to extend it).
 
 | Document | Status | Companion artifacts |
 |---|---|---|
-| [durable-objects.md](durable-objects.md) | proposal + runnable prototypes (re-landed 2026-10-15) | `resonatehq/resonate-sdk-ts` commit `b56fd06`: `src/objects/`, `tests/objects/` (off-branch; fetchable by SHA) |
+| [durable-objects.md](durable-objects.md) | proposal + runnable prototypes (re-landed 2026-10-15) | `resonatehq/resonate-sdk-ts` branch `claude/resonate-durable-objects-donm81`: `src/objects/`, `tests/objects/` |

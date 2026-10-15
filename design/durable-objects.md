@@ -1,8 +1,11 @@
 # Resonate Durable Objects
 
 **Status**: design proposal with runnable prototypes
-**Prototypes**: `resonatehq/resonate-sdk-ts` commit `b56fd06` (`src/objects/` +
-`tests/objects/`, 29 passing tests — off-branch after a reset; fetchable by SHA)
+**Prototypes**: `resonatehq/resonate-sdk-ts` branch
+`claude/resonate-durable-objects-donm81` (`src/objects/` + `tests/objects/`,
+29 passing tests — restored from `b56fd06` and ported to the `origin:lineage`
+id scheme: object base id = lineage origin, so chain serialization and serial
+hydration are same-origin awaits)
 **Scope**: developer experience, semantics, and mechanics of a durable-object
 (virtual actor) primitive on top of the Resonate protocol — including whether
 the protocol needs extending, and how objects and durable functions compose
