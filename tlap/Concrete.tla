@@ -15,7 +15,7 @@ vars ==
 -----------------------------------------------------------------------------
 
 Objects ==
-    [ i \in UNION { DOMAIN docs[o] : o \in Origin } |-> docs[i.origin][i] ]
+    [ i \in UNION { DOMAIN docs[o].objs : o \in Origin } |-> docs[i.origin].objs[i] ]
 
 A ==
     INSTANCE Abstract WITH objects <- Objects
@@ -590,9 +590,13 @@ Sweep(doc, t) ==
 
 -----------------------------------------------------------------------------
 
+(* A document is its objects plus a count of the writes that changed it, as in the servers. *)
+EmptyDoc ==
+    [ objs |-> EmptyFn, gen |-> 0 ]
+
 Fresh(ev) ==
     [ ev |-> ev, phase |-> "process", pending |-> << >>,
-      expect |-> EmptyFn ]
+      expect |-> EmptyDoc ]
 
 Set(f, k, v) ==
     [x \in (DOMAIN f) \cup {k} |-> IF x = k THEN v ELSE f[x]]
@@ -617,9 +621,10 @@ Process(r) ==
     /\ r \in DOMAIN steps
     /\ steps[r].phase = "process"
     /\ LET o     == OriginOf(steps[r].ev)
-           swept == Sweep(docs[o], now)
+           swept == Sweep(docs[o].objs, now)
            out   == Handle(steps[r].ev, swept.doc, now)
-           final == out.doc
+           final == IF out.doc = docs[o].objs THEN docs[o]
+                    ELSE [ objs |-> out.doc, gen |-> docs[o].gen + 1 ]
            puts  == swept.puts  \o out.puts
            dels  == swept.dels  \o out.dels
            sends == swept.sends \o out.sends
@@ -650,7 +655,10 @@ Perform(r) ==
                         /\ steps'    = rest
                         /\ UNCHANGED <<docs, outbox, now>>
                  [] e.tag = "PutDocument" ->
-                        IF docs[OriginOf(steps[r].ev)] = steps[r].expect THEN
+                        IF e.body = steps[r].expect THEN
+                            /\ steps' = rest
+                            /\ UNCHANGED <<docs, timeouts, outbox, now>>
+                        ELSE IF docs[OriginOf(steps[r].ev)] = steps[r].expect THEN
                             /\ docs'  = [docs EXCEPT
                                              ![OriginOf(steps[r].ev)] = e.body]
                             /\ steps' = rest
@@ -679,7 +687,7 @@ Clock ==
     /\ UNCHANGED <<docs, timeouts, outbox, steps>>
 
 Init ==
-    /\ docs     = [o \in Origin |-> EmptyFn]
+    /\ docs     = [o \in Origin |-> EmptyDoc]
     /\ timeouts = {}
     /\ outbox   = {}
     /\ steps    = EmptyFn
@@ -719,7 +727,12 @@ C_NowBound ==
     now <= MaxTime
 
 C_VersionBound ==
-    \A i \in UNION { DOMAIN docs[o] : o \in Origin } : docs[i.origin][i].task.version <= MaxVersion
+    \A i \in DOMAIN Objects : Objects[i].task.version <= MaxVersion
+
+CONSTANT MaxGen
+
+C_GenBound ==
+    \A o \in Origin : docs[o].gen <= MaxGen
 
 C_TypeOK ==
     A!TypeOK
@@ -743,7 +756,8 @@ SplitWrite ==
         /\ steps[r].phase = "perform"
         /\ docs[OriginOf(steps[r].ev)] /= steps[r].expect
         /\ \E j \in DOMAIN steps[r].pending :
-               steps[r].pending[j].tag = "PutDocument"
+               /\ steps[r].pending[j].tag = "PutDocument"
+               /\ steps[r].pending[j].body /= steps[r].expect
 
 NoSplitWrite ==
     ~SplitWrite
