@@ -254,7 +254,7 @@ Step(d, it, t0) ==
    did not, the walk's last store would fail to meet the one the write
    produces, and the refinement check would say so. *)
 Walk(r) ==
-    LET d0    == docs[OriginOf(steps[r].ev)]
+    LET d0    == docs[OriginOf(steps[r].ev)].objs
         t0    == stamp[r]
         its   == Items(d0, t0)
         store[n \in 0 .. Len(its)] ==
@@ -285,6 +285,7 @@ Walked(r) ==
     /\ steps[r].phase = "perform"
     /\ steps[r].pending /= << >>
     /\ Head(steps[r].pending).tag = "PutDocument"
+    /\ Head(steps[r].pending).body /= steps[r].expect
     /\ docs[OriginOf(steps[r].ev)] = steps[r].expect
     /\ clockA <= stamp[r]
     /\ LET k == IF s = top THEN 0 ELSE s.k
@@ -324,6 +325,7 @@ NextS ==
                 \/ /\ Perform(r)
                    /\ ~( /\ steps[r].pending /= << >>
                          /\ Head(steps[r].pending).tag = "PutDocument"
+                         /\ Head(steps[r].pending).body /= steps[r].expect
                          /\ docs[OriginOf(steps[r].ev)] = steps[r].expect )
                    /\ stamp' = IF steps[r].pending = << >>
                                THEN Del(stamp, r)
@@ -349,7 +351,7 @@ SendsInto(ob, ms) ==
         upto[Len(ms)]
 
 ObjectsAt(d, o) ==
-    LET D == [ p \in Origin |-> IF p = o THEN d ELSE docs[p] ]
+    LET D == [ p \in Origin |-> IF p = o THEN d ELSE docs[p].objs ]
     IN  [ i \in UNION { DOMAIN D[p] : p \in Origin } |-> D[i.origin][i] ]
 
 (* Where the walk has got to. Read only while one is in progress. *)
@@ -393,7 +395,8 @@ HoldersWalkable ==
     \A r \in DOMAIN steps :
         ( /\ steps[r].phase = "perform"
           /\ \E n \in DOMAIN steps[r].pending :
-                 steps[r].pending[n].tag = "PutDocument"
+                 /\ steps[r].pending[n].tag = "PutDocument"
+                 /\ steps[r].pending[n].body /= steps[r].expect
           /\ docs[OriginOf(steps[r].ev)] = steps[r].expect )
         => clockA <= stamp[r]
 
